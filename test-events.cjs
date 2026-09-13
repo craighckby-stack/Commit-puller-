@@ -17,10 +17,12 @@ const CONFIG = Object.freeze({
 });
 
 /**
- * GitHub Event type identifier for push events.
- * @type {string}
+ * Identifier map for GitHub Event types.
+ * @type {Readonly<{ PUSH: string }>}
  */
-const EVENT_TYPE_PUSH = 'PushEvent';
+const GITHUB_EVENT_TYPES = Object.freeze({
+  PUSH: 'PushEvent',
+});
 
 /**
  * Fetches public activity events for a target GitHub username.
@@ -59,25 +61,47 @@ function extractPushEvents(events) {
   if (!Array.isArray(events)) {
     return [];
   }
-  return events.filter((event) => event?.type === EVENT_TYPE_PUSH);
+  return events.filter((event) => event?.type === GITHUB_EVENT_TYPES.PUSH);
+}
+
+/**
+ * Formats event objects into a standard JSON output string.
+ *
+ * @param {Array<Record<string, unknown>>} events - Array of events to format.
+ * @returns {string} Formatted JSON output string.
+ */
+function formatEventsAsJson(events) {
+  return JSON.stringify(events, null, 2);
 }
 
 /**
  * Entry point to orchestrate fetching, filtering, and logging the latest push event.
  *
+ * @param {string} [username=CONFIG.DEFAULT_TARGET_USERNAME] - GitHub username to inspect.
  * @returns {Promise<void>}
  */
-async function run() {
+async function run(username = CONFIG.DEFAULT_TARGET_USERNAME) {
   try {
-    const rawEvents = await fetchUserEvents(CONFIG.DEFAULT_TARGET_USERNAME);
+    const rawEvents = await fetchUserEvents(username);
     const pushEvents = extractPushEvents(rawEvents);
     const latestPushEvents = pushEvents.slice(0, 1);
 
-    console.log(JSON.stringify(latestPushEvents, null, 2));
+    console.log(formatEventsAsJson(latestPushEvents));
   } catch (error) {
     console.error('Error executing GitHub event retrieval:', error);
     process.exitCode = 1;
   }
 }
 
-run();
+if (require.main === module) {
+  run();
+}
+
+module.exports = {
+  CONFIG,
+  GITHUB_EVENT_TYPES,
+  fetchUserEvents,
+  extractPushEvents,
+  formatEventsAsJson,
+  run,
+};
