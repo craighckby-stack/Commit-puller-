@@ -1,15 +1,17 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './App.tsx';
+import App from './App';
 import './index.css';
 
-const rootElement = document.getElementById('root');
+const rootContainer = document.getElementById('root');
 
-if (!rootElement) {
-  throw new Error('Failed to find the root element with ID "root". Ensure it is present in index.html.');
+if (!rootContainer) {
+  throw new Error(
+    'Failed to mount application: Root element with id "root" was not found in the document.',
+  );
 }
 
-const root = createRoot(rootElement);
+const root = createRoot(rootContainer);
 
 root.render(
   <StrictMode>
