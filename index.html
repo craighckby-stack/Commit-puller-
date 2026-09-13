@@ -1,18 +1,28 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Commit Archaeology Engine</title>
     <meta name="description" content="Analyze git repositories or commit logs to surface correct commits, fixed failures, and cross-commit intelligence powered by Gemini." />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="color-scheme" content="dark light" />
     <meta property="og:title" content="Commit Archaeology Engine" />
     <meta property="og:description" content="Analyze git repositories or commit logs to surface correct commits, fixed failures, and cross-commit intelligence powered by Gemini." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Commit Archaeology Engine" />
+    <meta name="twitter:description" content="Analyze git repositories or commit logs to surface correct commits, fixed failures, and cross-commit intelligence powered by Gemini." />
+    <link rel="modulepreload" href="/src/main.tsx" />
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <div style="padding: 2rem; text-align: center; font-family: system-ui, -apple-system, sans-serif;">
+        <h1>JavaScript Required</h1>
+        <p>Please enable JavaScript to run the Commit Archaeology Engine application.</p>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
