@@ -52,3 +52,11 @@ Line 53, Col 9: Unclosed double-quote string literal.
 Line 114, Col 8: Property declaration is missing its type annotation.
 ```
 **CONSTRAINT (Model Generalization):** Never repeat code patterns that produce this compiler/linter error on src/hooks/useCooldown.ts.
+
+### ❌ [2026-09-13] src/components/CooldownBadge.tsx `source: mutation-cycle`
+**Symptom:** AST / TypeScript Compiler Validation Rejected
+**EVIDENCE (Machine-Copied Fact):**
+```
+Line 153, Col 2: Expression expected.
+```
+**CONSTRAINT (Model Generalization):** Never repeat code patterns that produce this compiler/linter error on src/components/CooldownBadge.tsx.
