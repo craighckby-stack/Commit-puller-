@@ -1,5 +1,7 @@
 /**
  * Core domain types and statistical models for commit auditing and analysis.
+ *
+ * @module types
  */
 
 /**
@@ -38,6 +40,11 @@ export interface CommitRecord {
 }
 
 /**
+ * Mapping type for statistical frequency distributions across metadata properties.
+ */
+export type MetricFrequencyMap = Record<string, number>;
+
+/**
  * Aggregated metrics and frequency distributions computed across a set of evaluated commits.
  */
 export interface CommitStats {
@@ -48,11 +55,11 @@ export interface CommitStats {
   /** Total count of commits flagged with defects or regressions. */
   totalWrong: number;
   /** Frequency map tracking commit modifications per file path. */
-  fileCounts: Record<string, number>;
+  fileCounts: MetricFrequencyMap;
   /** Cycle metrics tracking transitions between defective states and remediation commits. */
-  wrongCorrectCycles: Record<string, number>;
+  wrongCorrectCycles: MetricFrequencyMap;
   /** Categorical distribution of commits grouped by thematic classifications or tags. */
-  themeCounts: Record<string, number>;
+  themeCounts: MetricFrequencyMap;
   /** Temporal distribution mapping calendar dates (YYYY-MM-DD) to commit volumes. */
-  dateCounts: Record<string, number>;
+  dateCounts: MetricFrequencyMap;
 }
