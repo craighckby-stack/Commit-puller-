@@ -1,14 +1,29 @@
 'use strict';
 
 /**
- * Validates and retrieves required environment configurations for test execution.
+ * @typedef {Object} EnvironmentConfig
+ * @property {string | undefined} githubToken - The GitHub authentication token if available in process.env.
+ */
+
+/**
+ * Retrieves the required execution environment configuration.
  *
- * @returns {{ githubToken: string | undefined }} Environment configuration object.
+ * @returns {EnvironmentConfig} Immutable environment configuration object.
  */
 function getEnvironmentConfig() {
-  return {
+  return Object.freeze({
     githubToken: process.env.GITHUB_TOKEN,
-  };
+  });
+}
+
+/**
+ * Formats authentication status description for reporting logs.
+ *
+ * @param {string | undefined} token - GitHub access token.
+ * @returns {string} Human-readable authentication status string.
+ */
+function formatAuthStatus(token) {
+  return token ? 'configured' : 'not provided (running in anonymous mock mode)';
 }
 
 /**
@@ -19,7 +34,7 @@ function getEnvironmentConfig() {
  */
 async function simulateRepositoryFetch(options = {}) {
   const { githubToken } = options;
-  const authStatus = githubToken ? 'configured' : 'not provided (running in anonymous mock mode)';
+  const authStatus = formatAuthStatus(githubToken);
 
   console.info(`[Test Runner] Mocking repository fetch logic (GitHub Token: ${authStatus})...`);
 }
