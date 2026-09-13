@@ -3,7 +3,7 @@
  */
 
 /**
- * Audit verdict indicating whether a commit adheres to expected standards.
+ * Audit verdict indicating whether a commit adheres to expected quality and correctness standards.
  */
 export type CommitVerdict = 'OK' | 'WRONG';
 
@@ -11,48 +11,48 @@ export type CommitVerdict = 'OK' | 'WRONG';
  * Detailed representation of a parsed Git commit along with its evaluation metadata.
  */
 export interface CommitRecord {
-  /** Full SHA-1/SHA-256 commit hash */
+  /** Full cryptographic commit hash (SHA-1 / SHA-256). */
   hash: string;
-  /** Abbreviated commit hash (typically 7-8 characters) */
+  /** Abbreviated commit identifier (typically 7-8 hex characters). */
   shortHash: string;
-  /** Name or identifier of the commit author */
+  /** Name or identifier of the commit author. */
   author: string;
-  /** ISO-formatted or formatted commit timestamp */
+  /** Formatted or ISO-8601 timestamp representing commit creation time. */
   date: string;
-  /** First line summary of the commit message */
+  /** Primary summary line of the commit message. */
   subject: string;
-  /** Full descriptive body of the commit message */
+  /** Full descriptive body of the commit message. */
   body: string;
-  /** List of file paths modified, added, or deleted in this commit */
+  /** List of file paths modified, added, or deleted in this commit. */
   files: string[];
-  /** Raw unified diff patch content */
+  /** Raw unified diff patch content. */
   diff: string;
-  /** Evaluation status of the commit */
+  /** Quality and correctness evaluation verdict. */
   verdict: CommitVerdict;
-  /** Reference or hash of the commit that fixed issues introduced by this commit */
+  /** Hash or reference identifier of the commit that resolved defects introduced by this commit. */
   fixedBy?: string;
-  /** Explanatory note or diagnostic feedback regarding the verdict */
+  /** Diagnostic reasoning or explanatory feedback regarding the verdict. */
   reason?: string;
-  /** Indicates whether this commit reverts a previous change */
+  /** Indicates whether this commit represents a reversion of a prior changeset. */
   isRevert?: boolean;
 }
 
 /**
- * Aggregated statistics and metric distributions across evaluated commits.
+ * Aggregated metrics and frequency distributions computed across a set of evaluated commits.
  */
 export interface CommitStats {
-  /** Total count of processed commits */
+  /** Total count of evaluated commits. */
   total: number;
-  /** Total count of commits passing review */
+  /** Total count of commits meeting acceptable quality standards. */
   totalCorrect: number;
-  /** Total count of commits flagged with defects or issues */
+  /** Total count of commits flagged with defects or regressions. */
   totalWrong: number;
-  /** Frequency distribution of modified file paths */
+  /** Frequency map tracking commit modifications per file path. */
   fileCounts: Record<string, number>;
-  /** Cycle frequency metrics tracking transitions between defective and corrected states */
+  /** Cycle metrics tracking transitions between defective states and remediation commits. */
   wrongCorrectCycles: Record<string, number>;
-  /** Distribution of commit classifications by theme/topic */
+  /** Categorical distribution of commits grouped by thematic classifications or tags. */
   themeCounts: Record<string, number>;
-  /** Temporal distribution mapping dates to commit volume */
+  /** Temporal distribution mapping calendar dates (YYYY-MM-DD) to commit volumes. */
   dateCounts: Record<string, number>;
 }
