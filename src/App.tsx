@@ -63,6 +63,7 @@ export default function App() {
   const [directRepoInput, setDirectRepoInput] = useState<string>('');
   const [loadingRepos, setLoadingRepos] = useState<boolean>(false);
   const [repoLoadError, setRepoLoadError] = useState<string | null>(null);
+  const [selectedRepoFullNames, setSelectedRepoFullNames] = useState<string[]>([]);
 
   const [repoName, setRepoName] = useState<string>('Archaeology-Engine');
   const [isPrivateRepo, setIsPrivateRepo] = useState<boolean>(false);
@@ -478,10 +479,10 @@ export default function App() {
                 setShowRepoModal(true);
               }}
               disabled={fetchingHistory || analyzing}
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-semibold transition-all shadow-sm disabled:opacity-50"
+              className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-all shadow-sm disabled:opacity-50"
             >
-              <Github className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Fetch History</span>
+              <Globe className="w-3.5 h-3.5" />
+              <span>Analyze Public Repo</span>
             </button>
 
             <button 
@@ -574,7 +575,101 @@ export default function App() {
           <>
             {/* Dashboard Tab */}
             {activeTab === 'dashboard' && stats && (
-              <div className="space-y-8">
+              <div className="space-y-6">
+                {/* Instant Public Repository Analyzer Bar */}
+                <div className="bg-neutral-900/90 rounded-2xl border border-neutral-800 p-4 sm:p-5 shadow-sm space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-blue-500/10 border border-blue-500/25 flex items-center justify-center text-blue-400">
+                        <Globe className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">
+                          Automatic Public Repository Engine
+                        </h3>
+                        <p className="text-[11px] text-neutral-400">
+                          Analyze any public GitHub repo instantly without requiring an account or personal token.
+                        </p>
+                      </div>
+                    </div>
+
+                    <span className="self-start sm:self-auto text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                      Public Auto-Discovery Enabled
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 absolute left-3.5 top-3 text-neutral-500" />
+                      <input
+                        type="text"
+                        placeholder="Enter any public repo: owner/repo (e.g. facebook/react, torvalds/linux) or GitHub URL..."
+                        value={directRepoInput}
+                        onChange={(e) => setDirectRepoInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && directRepoInput.trim()) {
+                            fetchAndAnalyzeRepo(directRepoInput.trim());
+                          }
+                        }}
+                        className="w-full bg-black text-xs font-mono pl-9 pr-4 py-2.5 rounded-xl border border-neutral-800 text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => directRepoInput.trim() && fetchAndAnalyzeRepo(directRepoInput.trim())}
+                      disabled={!directRepoInput.trim() || fetchingHistory || analyzing}
+                      className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-xs font-semibold rounded-xl transition-all shadow-sm shrink-0 flex items-center justify-center gap-1.5 font-sans"
+                    >
+                      {fetchingHistory ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                      <span>{fetchingHistory ? 'Fetching...' : 'Analyze Public Repo'}</span>
+                    </button>
+                  </div>
+
+                  {/* 1-Click Popular Public Repositories including DeepMind, DeepSeek, OpenAI, and IBM */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <span className="text-[10px] font-mono text-neutral-500 mr-1 flex items-center gap-1">
+                      <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
+                      Popular Options:
+                    </span>
+                    {[
+                      { name: 'deepseek-ai/DeepSeek-V3', label: 'DeepSeek-V3', stars: '85k', badge: 'DeepSeek' },
+                      { name: 'openai/whisper', label: 'whisper', stars: '73k', badge: 'OpenAI' },
+                      { name: 'google-deepmind/sonnet', label: 'sonnet', stars: '10k', badge: 'DeepMind' },
+                      { name: 'IBM/granite-code-models', label: 'granite-code', stars: '5k', badge: 'IBM' },
+                      { name: 'shadcn-ui/ui', label: 'ui', stars: '75k', badge: 'shadcn' },
+                      { name: 'facebook/react', label: 'react', stars: '228k', badge: 'Meta' },
+                      { name: 'vercel/next.js', label: 'next.js', stars: '124k', badge: 'Vercel' },
+                      { name: 'torvalds/linux', label: 'linux', stars: '180k', badge: 'Linux' },
+                    ].map((sample) => (
+                      <button
+                        key={sample.name}
+                        type="button"
+                        onClick={() => {
+                          setDirectRepoInput(sample.name);
+                          fetchAndAnalyzeRepo(sample.name);
+                        }}
+                        disabled={fetchingHistory || analyzing}
+                        className="text-[10px] font-mono px-2.5 py-1 rounded-lg bg-neutral-950 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 transition-all flex items-center gap-1.5 disabled:opacity-40 group"
+                      >
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-neutral-800 text-blue-300 font-semibold group-hover:bg-blue-600 group-hover:text-white transition-colors">{sample.badge}</span>
+                        <span>{sample.label}</span>
+                        <span className="text-amber-400/80 text-[9px]">★{sample.stars}</span>
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowRepoModal(true);
+                      }}
+                      className="text-[10px] font-mono px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40 transition-all flex items-center gap-1"
+                    >
+                      <Layers className="w-3 h-3" />
+                      <span>Select All Options...</span>
+                    </button>
+                  </div>
+                </div>
+
                 {/* Metric Cards Bento Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="bg-neutral-900/80 p-5 rounded-2xl border border-neutral-800/80 shadow-sm flex items-center justify-between hover:border-neutral-700 transition-all">
@@ -649,18 +744,31 @@ export default function App() {
                           <Tag className="w-4 h-4 text-blue-400" />
                           Subject Keywords & Themes
                         </h3>
-                        {selectedThemeFilter && (
+                        <div className="flex items-center space-x-2">
                           <button
+                            type="button"
                             onClick={() => {
                               setSelectedThemeFilter(null);
                               setSearchQuery('');
+                              setActiveTab('commits');
                             }}
-                            className="inline-flex items-center space-x-1 text-[11px] font-mono text-blue-400 hover:text-blue-300"
+                            className="inline-flex items-center space-x-1 text-[11px] font-mono text-neutral-400 hover:text-white px-2 py-0.5 rounded-lg bg-neutral-800 border border-neutral-700"
                           >
-                            <X className="w-3 h-3" />
-                            <span>Clear Filter ({selectedThemeFilter})</span>
+                            <span>Select All Commits</span>
                           </button>
-                        )}
+                          {selectedThemeFilter && (
+                            <button
+                              onClick={() => {
+                                setSelectedThemeFilter(null);
+                                setSearchQuery('');
+                              }}
+                              className="inline-flex items-center space-x-1 text-[11px] font-mono text-blue-400 hover:text-blue-300"
+                            >
+                              <X className="w-3 h-3" />
+                              <span>Clear Filter ({selectedThemeFilter})</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <p className="text-xs text-neutral-400 mb-4">
                         Click any keyword pill to filter commits, or add your own custom subject theme tags below:
@@ -1519,7 +1627,7 @@ export default function App() {
               </div>
 
               {/* Quick Account Chips */}
-              <div className="flex flex-wrap gap-1.5 pt-1">
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -1527,30 +1635,41 @@ export default function App() {
                     loadRepositories('');
                   }}
                   className={`text-[10px] font-mono px-2 py-0.5 rounded-lg border transition-all ${
-                    !repoAccountInput ? 'bg-purple-600/30 text-purple-300 border-purple-500/50' : 'bg-neutral-800 text-neutral-400 border-neutral-700 hover:text-neutral-200'
+                    !repoAccountInput ? 'bg-purple-600/30 text-purple-300 border-purple-500/50 font-bold' : 'bg-neutral-800 text-neutral-400 border-neutral-700 hover:text-neutral-200'
                   }`}
                 >
                   ★ Popular Public
                 </button>
-                {['shadcn-ui', 'facebook', 'vercel', 'tailwindlabs', 'torvalds', 'vuejs'].map((acc) => (
+                {[
+                  { id: 'google-deepmind', name: 'DeepMind' },
+                  { id: 'deepseek-ai', name: 'DeepSeek' },
+                  { id: 'openai', name: 'OpenAI' },
+                  { id: 'IBM', name: 'IBM' },
+                  { id: 'facebook', name: 'Meta/React' },
+                  { id: 'vercel', name: 'Vercel' },
+                  { id: 'shadcn-ui', name: 'shadcn' },
+                  { id: 'torvalds', name: 'Linux' },
+                  { id: 'tailwindlabs', name: 'Tailwind' },
+                  { id: 'vuejs', name: 'Vue' }
+                ].map((acc) => (
                   <button
-                    key={acc}
+                    key={acc.id}
                     type="button"
                     onClick={() => {
-                      setRepoAccountInput(acc);
-                      loadRepositories(acc);
+                      setRepoAccountInput(acc.id);
+                      loadRepositories(acc.id);
                     }}
-                    className={`text-[10px] font-mono px-2 py-0.5 rounded-lg border transition-all ${
-                      repoAccountInput === acc ? 'bg-purple-600/30 text-purple-300 border-purple-500/50' : 'bg-neutral-800 text-neutral-400 border-neutral-700 hover:text-neutral-200'
+                    className={`text-[10px] font-mono px-2 py-0.5 rounded-lg border transition-all flex items-center gap-1 ${
+                      repoAccountInput.toLowerCase() === acc.id.toLowerCase() ? 'bg-purple-600/30 text-purple-300 border-purple-500/50 font-bold' : 'bg-neutral-800 text-neutral-400 border-neutral-700 hover:text-neutral-200'
                     }`}
                   >
-                    @{acc}
+                    <span>@{acc.name}</span>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Filter loaded repositories */}
+            {/* Filter and Select All controls */}
             <div className="flex items-center space-x-2 shrink-0">
               <div className="relative flex-1">
                 <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-neutral-500" />
@@ -1562,10 +1681,69 @@ export default function App() {
                   className="w-full bg-black text-xs font-mono pl-8 pr-3 py-1.5 rounded-xl border border-neutral-800 text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-blue-500"
                 />
               </div>
+
+              {/* Select All Button */}
+              {userRepos.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const filtered = userRepos.filter(r => !repoSearchFilter || r.name.toLowerCase().includes(repoSearchFilter.toLowerCase()) || r.full_name.toLowerCase().includes(repoSearchFilter.toLowerCase()));
+                    const allFilteredNames = filtered.map(r => r.full_name);
+                    const isAllSelected = allFilteredNames.length > 0 && allFilteredNames.every(name => selectedRepoFullNames.includes(name));
+                    if (isAllSelected) {
+                      setSelectedRepoFullNames(prev => prev.filter(name => !allFilteredNames.includes(name)));
+                    } else {
+                      setSelectedRepoFullNames(prev => Array.from(new Set([...prev, ...allFilteredNames])));
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-[11px] font-mono font-semibold text-neutral-200 rounded-xl transition-all border border-neutral-700 shrink-0 flex items-center gap-1.5"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-blue-400" />
+                  <span>
+                    {(() => {
+                      const filtered = userRepos.filter(r => !repoSearchFilter || r.name.toLowerCase().includes(repoSearchFilter.toLowerCase()) || r.full_name.toLowerCase().includes(repoSearchFilter.toLowerCase()));
+                      const allFilteredNames = filtered.map(r => r.full_name);
+                      const isAllSelected = allFilteredNames.length > 0 && allFilteredNames.every(name => selectedRepoFullNames.includes(name));
+                      return isAllSelected ? 'Deselect All' : `Select All (${filtered.length})`;
+                    })()}
+                  </span>
+                </button>
+              )}
+
               <span className="text-[11px] font-mono text-neutral-400 shrink-0">
                 {userRepos.filter(r => !repoSearchFilter || r.name.toLowerCase().includes(repoSearchFilter.toLowerCase()) || r.full_name.toLowerCase().includes(repoSearchFilter.toLowerCase())).length} repos
               </span>
             </div>
+
+            {/* Batch Action Bar if any selected */}
+            {selectedRepoFullNames.length > 0 && (
+              <div className="p-2.5 rounded-xl bg-blue-950/40 border border-blue-500/30 flex items-center justify-between shrink-0">
+                <span className="text-xs font-mono text-blue-300">
+                  {selectedRepoFullNames.length} {selectedRepoFullNames.length === 1 ? 'repository' : 'repositories'} selected
+                </span>
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRepoFullNames([])}
+                    className="text-[11px] font-mono text-neutral-400 hover:text-neutral-200 px-2 py-1"
+                  >
+                    Clear Selection
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedRepoFullNames.length > 0) {
+                        fetchAndAnalyzeRepo(selectedRepoFullNames[0]);
+                      }
+                    }}
+                    disabled={fetchingHistory || analyzing}
+                    className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg transition-all"
+                  >
+                    {fetchingHistory ? 'Fetching...' : `Analyze Selected (${selectedRepoFullNames[0]})`}
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="flex items-center justify-between p-2.5 rounded-xl bg-neutral-800/40 border border-neutral-800/60 shrink-0">
               <div className="flex flex-col">
@@ -1621,38 +1799,64 @@ export default function App() {
               ) : (
                 userRepos
                   .filter(repo => !repoSearchFilter || repo.name.toLowerCase().includes(repoSearchFilter.toLowerCase()) || repo.full_name.toLowerCase().includes(repoSearchFilter.toLowerCase()) || (repo.description && repo.description.toLowerCase().includes(repoSearchFilter.toLowerCase())))
-                  .map((repo) => (
-                    <button
-                      key={repo.id}
-                      onClick={() => fetchAndAnalyzeRepo(repo.full_name)}
-                      disabled={fetchingHistory || analyzing}
-                      className="w-full flex items-center justify-between p-3 rounded-xl bg-black border border-neutral-800 hover:border-blue-500/50 hover:bg-neutral-950 transition-all text-left group disabled:opacity-50"
-                    >
-                      <div className="flex-1 min-w-0 pr-3">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-neutral-200 truncate">{repo.name}</span>
-                          {repo.private ? (
-                            <Lock className="w-3 h-3 text-neutral-500 shrink-0" />
-                          ) : (
-                            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-400 border border-neutral-700 shrink-0">public</span>
-                          )}
-                          {repo.stargazers_count > 0 && (
-                            <span className="text-[10px] text-amber-400/80 flex items-center gap-0.5 font-mono shrink-0">
-                              <Star className="w-3 h-3 fill-amber-400/80" />
-                              {repo.stargazers_count > 1000 ? `${(repo.stargazers_count / 1000).toFixed(1)}k` : repo.stargazers_count}
-                            </span>
-                          )}
+                  .map((repo) => {
+                    const isSelected = selectedRepoFullNames.includes(repo.full_name);
+                    return (
+                      <div
+                        key={repo.id}
+                        className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${
+                          isSelected ? 'bg-blue-950/20 border-blue-500/60' : 'bg-black border-neutral-800 hover:border-blue-500/50 hover:bg-neutral-950'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 flex-1 min-w-0 pr-3">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              if (isSelected) {
+                                setSelectedRepoFullNames(prev => prev.filter(n => n !== repo.full_name));
+                              } else {
+                                setSelectedRepoFullNames(prev => [...prev, repo.full_name]);
+                              }
+                            }}
+                            className="w-4 h-4 rounded border-neutral-700 bg-neutral-900 text-blue-600 focus:ring-blue-500 cursor-pointer shrink-0"
+                          />
+                          <div 
+                            className="flex-1 min-w-0 cursor-pointer"
+                            onClick={() => fetchAndAnalyzeRepo(repo.full_name)}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-neutral-200 truncate">{repo.name}</span>
+                              {repo.private ? (
+                                <Lock className="w-3 h-3 text-neutral-500 shrink-0" />
+                              ) : (
+                                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-400 border border-neutral-700 shrink-0">public</span>
+                              )}
+                              {repo.stargazers_count > 0 && (
+                                <span className="text-[10px] text-amber-400/80 flex items-center gap-0.5 font-mono shrink-0">
+                                  <Star className="w-3 h-3 fill-amber-400/80" />
+                                  {repo.stargazers_count > 1000 ? `${(repo.stargazers_count / 1000).toFixed(1)}k` : repo.stargazers_count}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-neutral-500 font-mono mt-0.5 block truncate">{repo.full_name}</span>
+                            {repo.description && (
+                              <p className="text-[10px] text-neutral-400 mt-1 line-clamp-1">{repo.description}</p>
+                            )}
+                          </div>
                         </div>
-                        <span className="text-[10px] text-neutral-500 font-mono mt-0.5 block truncate">{repo.full_name}</span>
-                        {repo.description && (
-                          <p className="text-[10px] text-neutral-400 mt-1 line-clamp-1">{repo.description}</p>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => fetchAndAnalyzeRepo(repo.full_name)}
+                          disabled={fetchingHistory || analyzing}
+                          className="text-[10px] text-neutral-300 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-blue-600 hover:text-white transition-colors shrink-0 font-medium disabled:opacity-40"
+                        >
+                          {fetchingHistory ? 'Fetching...' : 'Analyze History'}
+                        </button>
                       </div>
-                      <div className="text-[10px] text-neutral-400 px-3 py-1.5 rounded-lg bg-neutral-800/60 group-hover:bg-blue-600 group-hover:text-white transition-colors shrink-0 font-medium">
-                        {fetchingHistory ? 'Fetching...' : 'Analyze History'}
-                      </div>
-                    </button>
-                  ))
+                    );
+                  })
               )}
             </div>
           </div>

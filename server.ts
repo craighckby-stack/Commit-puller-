@@ -608,16 +608,16 @@ app.post("/api/github/repos", async (req, res) => {
         const data = await searchRes.json();
         repos = data.items || [];
       } else {
-        // Fallback curated popular public repos
+        // Fallback curated popular public repos including DeepMind, DeepSeek, OpenAI, and IBM
         repos = [
-          { id: 10270250, name: "react", full_name: "facebook/react", private: false, updated_at: new Date().toISOString() },
-          { id: 70107786, name: "next.js", full_name: "vercel/next.js", private: false, updated_at: new Date().toISOString() },
-          { id: 593740924, name: "ui", full_name: "shadcn-ui/ui", private: false, updated_at: new Date().toISOString() },
-          { id: 11730342, name: "vue", full_name: "vuejs/core", private: false, updated_at: new Date().toISOString() },
-          { id: 2325298, name: "linux", full_name: "torvalds/linux", private: false, updated_at: new Date().toISOString() },
-          { id: 10639145, name: "tailwindcss", full_name: "tailwindlabs/tailwindcss", private: false, updated_at: new Date().toISOString() },
-          { id: 237159, name: "express", full_name: "expressjs/express", private: false, updated_at: new Date().toISOString() },
-          { id: 14098069, name: "freeCodeCamp", full_name: "freeCodeCamp/freeCodeCamp", private: false, updated_at: new Date().toISOString() }
+          { id: 755255474, name: "DeepSeek-V3", full_name: "deepseek-ai/DeepSeek-V3", stargazers_count: 85000, description: "DeepSeek-V3 open-source base & chat models", private: false, updated_at: new Date().toISOString() },
+          { id: 593740924, name: "whisper", full_name: "openai/whisper", stargazers_count: 73000, description: "Robust Speech Recognition via Large-Scale Weak Supervision", private: false, updated_at: new Date().toISOString() },
+          { id: 489218392, name: "sonnet", full_name: "google-deepmind/sonnet", stargazers_count: 10000, description: "Google DeepMind neural network library for TensorFlow/JAX", private: false, updated_at: new Date().toISOString() },
+          { id: 795431230, name: "granite-code-models", full_name: "IBM/granite-code-models", stargazers_count: 5000, description: "IBM Granite Code Models family for code intelligence", private: false, updated_at: new Date().toISOString() },
+          { id: 10270250, name: "react", full_name: "facebook/react", stargazers_count: 228000, description: "The library for web and native user interfaces", private: false, updated_at: new Date().toISOString() },
+          { id: 70107786, name: "next.js", full_name: "vercel/next.js", stargazers_count: 124000, description: "The React Framework", private: false, updated_at: new Date().toISOString() },
+          { id: 593740924, name: "ui", full_name: "shadcn-ui/ui", stargazers_count: 75000, description: "Beautifully designed components built with Tailwind CSS", private: false, updated_at: new Date().toISOString() },
+          { id: 2325298, name: "linux", full_name: "torvalds/linux", stargazers_count: 180000, description: "Linux kernel source tree", private: false, updated_at: new Date().toISOString() },
         ];
       }
     }
@@ -680,15 +680,20 @@ app.post("/api/github/history", async (req, res) => {
     }
 
     const fetchCommitDetail = async (c: any) => {
+      const authorName = c.commit?.author?.name || c.commit?.committer?.name || c.author?.login || 'Git Author';
+      const authorEmail = c.commit?.author?.email || c.commit?.committer?.email || 'git@archaeology.local';
+      const commitDate = c.commit?.author?.date || c.commit?.committer?.date || new Date().toISOString();
+      const commitMsg = c.commit?.message || 'No commit message';
+
+      let fallbackLog = `commit ${c.sha}\n`;
+      fallbackLog += `Author: ${authorName} <${authorEmail}>\n`;
+      fallbackLog += `Date:   ${commitDate}\n\n`;
+      fallbackLog += `    ${commitMsg.split('\n').join('\n    ')}\n\n`;
+
       try {
         const detailRes = await fetch(`https://api.github.com/repos/${repoFullName}/commits/${c.sha}`, { headers });
-        if (!detailRes.ok) return null;
+        if (!detailRes.ok) return fallbackLog;
         const detail = await detailRes.json();
-        
-        const authorName = c.commit?.author?.name || c.commit?.committer?.name || c.author?.login || 'Git Author';
-        const authorEmail = c.commit?.author?.email || c.commit?.committer?.email || 'git@archaeology.local';
-        const commitDate = c.commit?.author?.date || c.commit?.committer?.date || new Date().toISOString();
-        const commitMsg = c.commit?.message || 'No commit message';
 
         let logPart = `commit ${c.sha}\n`;
         logPart += `Author: ${authorName} <${authorEmail}>\n`;
@@ -708,7 +713,7 @@ app.post("/api/github/history", async (req, res) => {
         logPart += "\n";
         return logPart;
       } catch (err) {
-        return null;
+        return fallbackLog;
       }
     };
 
