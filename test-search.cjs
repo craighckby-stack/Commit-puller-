@@ -5,13 +5,18 @@
 
 'use strict';
 
+/** @type {string} */
 const GITHUB_API_BASE_URL = 'https://api.github.com';
+
+/** @type {string} */
 const GITHUB_COMMIT_SEARCH_ACCEPT_HEADER = 'application/vnd.github.cloak-preview+json';
+
+/** @type {string} */
 const DEFAULT_USER_AGENT = 'EMG-Search-Test-Agent';
 
 /**
  * Default search options for the GitHub Commits Search API.
- * @type {Readonly<{perPage: number, sort: string, order: string}>}
+ * @type {Readonly<{ perPage: number, sort: string, order: string }>}
  */
 const DEFAULT_SEARCH_OPTIONS = Object.freeze({
   perPage: 3,
@@ -20,7 +25,7 @@ const DEFAULT_SEARCH_OPTIONS = Object.freeze({
 });
 
 /**
- * Builds the URL and parameters for the GitHub commits search endpoint.
+ * Constructs a fully qualified URL for querying the GitHub Commits Search API endpoint.
  *
  * @param {string} query - The search query string.
  * @param {Object} [options] - Optional search parameters.
@@ -72,6 +77,16 @@ async function searchGitHubCommits(query, options = {}) {
 }
 
 /**
+ * Extracts the primary record from a GitHub search result payload.
+ *
+ * @param {Object} searchResult - The search response object.
+ * @returns {Object} The first commit item or the full payload if items are unavailable.
+ */
+function extractPrimaryRecord(searchResult) {
+  return searchResult?.items?.[0] ?? searchResult;
+}
+
+/**
  * Main execution entry point.
  *
  * @returns {Promise<void>}
@@ -81,7 +96,7 @@ async function run() {
 
   try {
     const searchResult = await searchGitHubCommits(targetAuthorQuery);
-    const primaryRecord = searchResult.items?.[0] ?? searchResult;
+    const primaryRecord = extractPrimaryRecord(searchResult);
 
     console.log(JSON.stringify(primaryRecord, null, 2));
   } catch (error) {
