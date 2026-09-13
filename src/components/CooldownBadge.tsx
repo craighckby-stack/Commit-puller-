@@ -44,7 +44,7 @@ export function CooldownBadge({
   label,
   size = 'sm',
   showReadyState = false,
-}: CooldownBadgeProps) {
+}: CooldownBadgeProps): React.JSX.Element | null {
   if (!isCooling && !showReadyState) {
     return null;
   }
@@ -93,7 +93,7 @@ export function CooldownButtonContent({
   idleText,
   coolingText = 'Cooling down',
   icon,
-}: CooldownButtonTextProps) {
+}: CooldownButtonTextProps): React.JSX.Element {
   if (isCooling) {
     return (
       <span className="inline-flex items-center gap-1.5 font-mono">
@@ -123,9 +123,8 @@ export interface RateLimitStatusHeaderProps {
 export function RateLimitStatusHeader({
   isAnyCooling,
   maxRemainingSeconds,
-  activeKey,
   mode,
-}: RateLimitStatusHeaderProps) {
+}: RateLimitStatusHeaderProps): React.JSX.Element {
   return (
     <div className="flex items-center gap-2">
       {isAnyCooling ? (
