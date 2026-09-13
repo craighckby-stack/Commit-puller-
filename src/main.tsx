@@ -4,15 +4,15 @@ import App from './App';
 import './index.css';
 
 /**
- * The target DOM element ID where the React application mounts.
+ * The target DOM element identifier where the React application mounts.
  */
-const ROOT_ELEMENT_ID = 'root';
+const ROOT_ELEMENT_ID: string = 'root';
 
 /**
- * Bootstraps and renders the root React application into the DOM.
+ * Bootstraps and renders the root React application instance into the DOM.
  */
 function initializeApplication(): void {
-  const rootContainer = document.getElementById(ROOT_ELEMENT_ID);
+  const rootContainer: HTMLElement | null = document.getElementById(ROOT_ELEMENT_ID);
 
   if (!rootContainer) {
     throw new Error(
