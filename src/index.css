@@ -2,28 +2,32 @@
 
 /**
  * EMG Core Neural Engine - Global Stylesheet & Design Tokens
- * Modular structure defining custom CSS properties, base typography resets,
- * custom scrollbar styles, and glassmorphism utility classes.
+ *
+ * Modular Architecture:
+ * 1. Design System Tokens (--color-*, --font-*, --transition-*)
+ * 2. Base Resets & Global Document Defaults
+ * 3. Utility Classes & Glassmorphism Surfaces
+ * 4. Custom Webkit Scrollbar Styling
  */
 
 /* ==========================================================================
-   Design System Tokens & CSS Custom Properties
+   1. Design System Tokens & Custom Properties
    ========================================================================== */
 :root {
-  /* Color Tokens */
+  /* Palette & Surface Color Tokens */
   --color-neural-bg: #090d16;
   --color-neural-surface: #111827;
   --color-neural-border: rgba(255, 255, 255, 0.08);
   --color-neural-accent: #3b82f6;
   --color-neural-accent-glow: rgba(59, 130, 246, 0.25);
 
-  /* Typography & Animation Tokens */
+  /* Typography & Animation Specification */
   --font-family-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --transition-standard: 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ==========================================================================
-   Base Layer & Resets
+   2. Base Layer & Document Resets
    ========================================================================== */
 @layer base {
   *,
@@ -57,7 +61,7 @@
 }
 
 /* ==========================================================================
-   Custom Utility Classes & Components
+   3. Utility Classes & Component Surfaces
    ========================================================================== */
 @layer utilities {
   .font-mono-code {
@@ -77,7 +81,7 @@
 }
 
 /* ==========================================================================
-   Custom Scrollbar Styling
+   4. Custom Scrollbar Styling
    ========================================================================== */
 ::-webkit-scrollbar {
   width: 6px;
