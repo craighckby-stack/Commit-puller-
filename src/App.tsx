@@ -4,12 +4,17 @@ import {
   GitCommit, CheckCircle2, XCircle, Brain, FileCode, Search, 
   Download, RefreshCw, Layers, Terminal, Sparkles, Copy, Check, Plus, Tag, X,
   Github, UploadCloud, Lock, Globe, ExternalLink, ShieldCheck, AlertCircle, FolderGit2,
-  Settings, Key, Cpu, User, Save, Eye, EyeOff, FolderDown, Archive, Star
+  Settings, Key, Cpu, User, Save, Eye, EyeOff, FolderDown, Archive, Star,
+  Timer, Hourglass, Gauge, Zap
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { CommitRecord, CommitStats } from './types';
+import { useCooldown, CooldownActionKey } from './hooks/useCooldown';
+import { CooldownBadge, CooldownButtonContent, RateLimitStatusHeader } from './components/CooldownBadge';
 
 export default function App() {
+  const cooldown = useCooldown();
+
   const [commits, setCommits] = useState<CommitRecord[]>([]);
   const [stats, setStats] = useState<CommitStats | null>(null);
   const [correctMd, setCorrectMd] = useState<string>('');
@@ -80,8 +85,10 @@ export default function App() {
   const [pushError, setPushError] = useState<string | null>(null);
 
   const loadRepositories = async (targetAccount?: string) => {
+    if (cooldown.isCooling('load_repos')) return;
     setLoadingRepos(true);
     setRepoLoadError(null);
+    cooldown.startCooldown('load_repos');
     try {
       const accountToFetch = targetAccount !== undefined ? targetAccount.trim() : repoAccountInput.trim();
       const res = await fetch('/api/github/repos', {
@@ -138,8 +145,10 @@ export default function App() {
 
   const verifyGitHubToken = async (tokenToVerify: string) => {
     if (!tokenToVerify.trim()) return;
+    if (cooldown.isCooling('verify_pat')) return;
     setVerifyingToken(true);
     setTokenError(null);
+    cooldown.startCooldown('verify_pat');
     try {
       const res = await fetch('/api/github/verify', {
         method: 'POST',
@@ -176,9 +185,11 @@ export default function App() {
       setShowGitHubModal(true);
       return;
     }
+    if (cooldown.isCooling('push_github')) return;
     setPushingToGitHub(true);
     setPushError(null);
     setPushSuccess(null);
+    cooldown.startCooldown('push_github');
 
     let filesToPush: Array<{ path: string; content: string }> = [
       { path: 'CORRECT.md', content: correctMd },
@@ -223,7 +234,9 @@ export default function App() {
   };
 
   const loadSampleRepo = async () => {
+    if (cooldown.isCooling('load_sample')) return;
     setLoading(true);
+    cooldown.startCooldown('load_sample');
     try {
       const res = await fetch('/api/sample');
       const data = await res.json();
@@ -252,8 +265,10 @@ export default function App() {
   };
 
   const runAnalysis = async (overrideLog?: string) => {
+    if (cooldown.isCooling('run_analysis')) return;
     setAnalyzing(true);
     setShowPasteModal(false);
+    cooldown.startCooldown('run_analysis');
     try {
       const res = await fetch('/api/analyze', {
         method: 'POST',
@@ -289,9 +304,15 @@ export default function App() {
       alert("Please specify a valid repository name (e.g., owner/repo or full GitHub URL).");
       return;
     }
+    if (cooldown.isCooling('fetch_repo')) {
+      alert(`Cooldown Active: Please wait ${cooldown.getRemainingSeconds('fetch_repo')}s before scanning again to respect GitHub API rate limits.`);
+      return;
+    }
     const cleanRepoName = repoFullName.trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/^\/+|\/+$/g, '');
     setFetchingHistory(true);
     setShowRepoModal(false);
+    cooldown.startCooldown('fetch_repo');
+    cooldown.startCooldown('quick_scan');
     try {
       const res = await fetch('/api/github/history', {
         method: 'POST',
@@ -457,6 +478,14 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-2">
+            {/* Rate limit & cooldown status monitor */}
+            <RateLimitStatusHeader
+              isAnyCooling={cooldown.isAnyCooling}
+              maxRemainingSeconds={cooldown.maxRemainingSeconds}
+              activeKey={cooldown.activeKey}
+              mode={cooldown.cooldownMode}
+            />
+
             <button 
               onClick={() => setIsSettingsPanelOpen(true)}
               className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-semibold transition-all shadow-sm shadow-purple-500/20"
@@ -467,10 +496,22 @@ export default function App() {
 
             <button 
               onClick={() => setShowGitHubModal(true)}
-              className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-semibold transition-all shadow-sm"
+              disabled={cooldown.isCooling('push_github')}
+              className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-semibold transition-all shadow-sm disabled:opacity-50"
             >
-              <Github className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Push</span>
+              {cooldown.isCooling('push_github') ? (
+                <CooldownButtonContent
+                  isCooling={true}
+                  remainingSeconds={cooldown.getRemainingSeconds('push_github')}
+                  idleText="Push"
+                  coolingText="Push"
+                />
+              ) : (
+                <>
+                  <Github className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Push</span>
+                </>
+              )}
             </button>
 
             <button 
@@ -478,16 +519,27 @@ export default function App() {
                 if (userRepos.length === 0 && githubToken) verifyGitHubToken(githubToken);
                 setShowRepoModal(true);
               }}
-              disabled={fetchingHistory || analyzing}
+              disabled={fetchingHistory || analyzing || cooldown.isCooling('fetch_repo')}
               className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-all shadow-sm disabled:opacity-50"
             >
-              <Globe className="w-3.5 h-3.5" />
-              <span>Analyze Public Repo</span>
+              {cooldown.isCooling('fetch_repo') ? (
+                <CooldownButtonContent
+                  isCooling={true}
+                  remainingSeconds={cooldown.getRemainingSeconds('fetch_repo')}
+                  idleText="Analyze Public Repo"
+                  coolingText="Wait"
+                />
+              ) : (
+                <>
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>Analyze Public Repo</span>
+                </>
+              )}
             </button>
 
             <button 
               onClick={() => setShowPasteModal(true)}
-              disabled={fetchingHistory || analyzing}
+              disabled={fetchingHistory || analyzing || cooldown.isCooling('run_analysis')}
               className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-xs font-medium text-neutral-300 transition-all border border-neutral-800 disabled:opacity-50"
             >
               <Terminal className="w-3.5 h-3.5 text-blue-400" />
@@ -496,10 +548,21 @@ export default function App() {
 
             <button 
               onClick={loadSampleRepo}
-              disabled={loading || analyzing}
+              disabled={loading || analyzing || cooldown.isCooling('load_sample')}
               className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-xs font-medium text-neutral-300 transition-all border border-neutral-800 disabled:opacity-50"
             >
-              {loading || analyzing ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" /> : <Sparkles className="w-3.5 h-3.5 text-amber-400" />}
+              {cooldown.isCooling('load_sample') ? (
+                <CooldownButtonContent
+                  isCooling={true}
+                  remainingSeconds={cooldown.getRemainingSeconds('load_sample')}
+                  idleText="Sample"
+                  coolingText="Wait"
+                />
+              ) : loading || analyzing ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
+              ) : (
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              )}
               <span className="hidden sm:inline">Sample</span>
             </button>
           </div>
@@ -584,8 +647,14 @@ export default function App() {
                         <Globe className="w-4 h-4" />
                       </div>
                       <div>
-                        <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">
-                          Automatic Public Repository Engine
+                        <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+                          <span>Automatic Public Repository Engine</span>
+                          <CooldownBadge
+                            isCooling={cooldown.isCooling('fetch_repo')}
+                            remainingSeconds={cooldown.getRemainingSeconds('fetch_repo')}
+                            label="Cooldown"
+                            showReadyState={true}
+                          />
                         </h3>
                         <p className="text-[11px] text-neutral-400">
                           Analyze any public GitHub repo instantly without requiring an account or personal token.
@@ -595,7 +664,7 @@ export default function App() {
 
                     <span className="self-start sm:self-auto text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 flex items-center gap-1">
                       <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                      Public Auto-Discovery Enabled
+                      Rate-Limited Limit Guard Active
                     </span>
                   </div>
 
@@ -618,11 +687,27 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => directRepoInput.trim() && fetchAndAnalyzeRepo(directRepoInput.trim())}
-                      disabled={!directRepoInput.trim() || fetchingHistory || analyzing}
+                      disabled={!directRepoInput.trim() || fetchingHistory || analyzing || cooldown.isCooling('fetch_repo')}
                       className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-xs font-semibold rounded-xl transition-all shadow-sm shrink-0 flex items-center justify-center gap-1.5 font-sans"
                     >
-                      {fetchingHistory ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                      <span>{fetchingHistory ? 'Fetching...' : 'Analyze Public Repo'}</span>
+                      {cooldown.isCooling('fetch_repo') ? (
+                        <CooldownButtonContent
+                          isCooling={true}
+                          remainingSeconds={cooldown.getRemainingSeconds('fetch_repo')}
+                          idleText="Analyze Public Repo"
+                          coolingText="Cooldown Active"
+                        />
+                      ) : fetchingHistory ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Fetching...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>Analyze Public Repo</span>
+                        </>
+                      )}
                     </button>
                   </div>
 
@@ -649,12 +734,19 @@ export default function App() {
                           setDirectRepoInput(sample.name);
                           fetchAndAnalyzeRepo(sample.name);
                         }}
-                        disabled={fetchingHistory || analyzing}
+                        disabled={fetchingHistory || analyzing || cooldown.isCooling('quick_scan')}
                         className="text-[10px] font-mono px-2.5 py-1 rounded-lg bg-neutral-950 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 transition-all flex items-center gap-1.5 disabled:opacity-40 group"
                       >
                         <span className="text-[9px] px-1 py-0.2 rounded bg-neutral-800 text-blue-300 font-semibold group-hover:bg-blue-600 group-hover:text-white transition-colors">{sample.badge}</span>
                         <span>{sample.label}</span>
-                        <span className="text-amber-400/80 text-[9px]">★{sample.stars}</span>
+                        {cooldown.isCooling('quick_scan') ? (
+                          <span className="text-amber-400 font-bold text-[9px] flex items-center gap-0.5">
+                            <Timer className="w-2.5 h-2.5 animate-spin" />
+                            {cooldown.getRemainingSeconds('quick_scan')}s
+                          </span>
+                        ) : (
+                          <span className="text-amber-400/80 text-[9px]">★{sample.stars}</span>
+                        )}
                       </button>
                     ))}
                     <button
@@ -1050,6 +1142,86 @@ export default function App() {
               )}
 
               <form id="settings-form" onSubmit={saveConfigSettings} className="space-y-8">
+                {/* Rate Limits & Cooldown Protection Settings */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between text-amber-400 pb-2 border-b border-neutral-800/50">
+                    <div className="flex items-center gap-2">
+                      <Gauge className="w-4 h-4" />
+                      <h3 className="text-xs font-bold font-mono uppercase tracking-widest">Rate Limit & Cooldown Controls</h3>
+                    </div>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 font-bold">
+                      Active Shield
+                    </span>
+                  </div>
+
+                  <div className="space-y-3 bg-black p-3.5 rounded-xl border border-neutral-800">
+                    <label className="text-xs font-semibold text-neutral-300 block">Rate-Limit Cooldown Profile</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: 'standard', name: 'Standard', desc: '5s GitHub / 8s Push', icon: Zap },
+                        { id: 'strict', name: 'Strict (Safe)', desc: '10s GitHub / 15s Push', icon: ShieldCheck },
+                        { id: 'relaxed', name: 'Relaxed', desc: '2s GitHub / 4s Push', icon: RefreshCw },
+                      ].map((mode) => (
+                        <button
+                          key={mode.id}
+                          type="button"
+                          onClick={() => cooldown.setCooldownMode(mode.id as any)}
+                          className={`p-2.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                            cooldown.cooldownMode === mode.id
+                              ? 'bg-amber-500/10 border-amber-500/50 text-white'
+                              : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-neutral-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-bold">{mode.name}</span>
+                            <mode.icon className={`w-3.5 h-3.5 ${cooldown.cooldownMode === mode.id ? 'text-amber-400' : 'text-neutral-500'}`} />
+                          </div>
+                          <span className="text-[9px] text-neutral-500 font-mono">{mode.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-neutral-500 pt-1">
+                      Cooldown timers automatically delay rapid requests to prevent anonymous & authenticated GitHub REST API rate limits (HTTP 429).
+                    </p>
+                  </div>
+
+                  {/* Live Cooldown Subsystem Monitors */}
+                  <div className="space-y-2 bg-neutral-950 p-3.5 rounded-xl border border-neutral-800/80">
+                    <div className="flex items-center justify-between text-xs font-semibold text-neutral-300">
+                      <span>Subsystem Timers</span>
+                      <span className="text-[10px] font-mono text-neutral-400">
+                        {cooldown.isAnyCooling ? `Cooling (${cooldown.maxRemainingSeconds}s)` : 'All Ready'}
+                      </span>
+                    </div>
+                    <div className="space-y-1.5 pt-1 font-mono text-[10px]">
+                      {[
+                        { key: 'fetch_repo' as const, label: 'Repository History Fetch' },
+                        { key: 'run_analysis' as const, label: 'Gemini Analysis Engine' },
+                        { key: 'push_github' as const, label: 'GitHub Push & Commit' },
+                        { key: 'load_repos' as const, label: 'Account Repo Browser' },
+                        { key: 'verify_pat' as const, label: 'PAT Verification' },
+                        { key: 'quick_scan' as const, label: '1-Click Public Scans' },
+                      ].map((item) => {
+                        const isCool = cooldown.isCooling(item.key);
+                        const rem = cooldown.getRemainingSeconds(item.key);
+                        return (
+                          <div key={item.key} className="flex items-center justify-between py-1 border-b border-neutral-900 last:border-0">
+                            <span className="text-neutral-400">{item.label}</span>
+                            {isCool ? (
+                              <span className="text-amber-400 font-bold flex items-center gap-1">
+                                <Timer className="w-3 h-3 animate-spin" />
+                                {rem}s
+                              </span>
+                            ) : (
+                              <span className="text-emerald-400/80">READY</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
                 {/* GitHub Preferences */}
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 text-blue-400 pb-2 border-b border-neutral-800/50">
@@ -1297,10 +1469,19 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => verifyGitHubToken(githubToken)}
-                  disabled={verifyingToken || !githubToken.trim()}
+                  disabled={verifyingToken || !githubToken.trim() || cooldown.isCooling('verify_pat')}
                   className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-neutral-200 rounded-xl transition-all border border-neutral-700 disabled:opacity-50"
                 >
-                  {verifyingToken ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : 'Verify'}
+                  {cooldown.isCooling('verify_pat') ? (
+                    <span className="flex items-center gap-1 font-mono text-[11px] text-amber-400">
+                      <Timer className="w-3 h-3 animate-spin" />
+                      {cooldown.getRemainingSeconds('verify_pat')}s
+                    </span>
+                  ) : verifyingToken ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    'Verify'
+                  )}
                 </button>
               </div>
 
@@ -1481,11 +1662,27 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleGitHubPush}
-                disabled={pushingToGitHub || !githubToken.trim()}
+                disabled={pushingToGitHub || !githubToken.trim() || cooldown.isCooling('push_github')}
                 className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-white hover:bg-neutral-200 text-xs font-semibold text-black transition-all shadow-sm disabled:opacity-50"
               >
-                {pushingToGitHub ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
-                <span>Create Repo & Push Files</span>
+                {cooldown.isCooling('push_github') ? (
+                  <CooldownButtonContent
+                    isCooling={true}
+                    remainingSeconds={cooldown.getRemainingSeconds('push_github')}
+                    idleText="Create Repo & Push Files"
+                    coolingText="Push Cooldown"
+                  />
+                ) : pushingToGitHub ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Creating & Pushing...</span>
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    <span>Create Repo & Push Files</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -1530,9 +1727,19 @@ export default function App() {
               </button>
               <button
                 onClick={() => runAnalysis()}
-                className="px-5 py-2.5 rounded-xl bg-white hover:bg-neutral-200 text-xs font-semibold text-black transition-all shadow-sm"
+                disabled={cooldown.isCooling('run_analysis')}
+                className="px-5 py-2.5 rounded-xl bg-white hover:bg-neutral-200 text-xs font-semibold text-black transition-all shadow-sm disabled:opacity-50"
               >
-                Run Archaeology Analysis
+                {cooldown.isCooling('run_analysis') ? (
+                  <CooldownButtonContent
+                    isCooling={true}
+                    remainingSeconds={cooldown.getRemainingSeconds('run_analysis')}
+                    idleText="Run Archaeology Analysis"
+                    coolingText="Analysis Cooldown"
+                  />
+                ) : (
+                  <span>Run Archaeology Analysis</span>
+                )}
               </button>
             </div>
           </div>
@@ -1583,10 +1790,21 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => directRepoInput.trim() && fetchAndAnalyzeRepo(directRepoInput.trim())}
-                  disabled={!directRepoInput.trim() || fetchingHistory}
+                  disabled={!directRepoInput.trim() || fetchingHistory || cooldown.isCooling('fetch_repo')}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-xs font-semibold rounded-xl transition-all shadow-sm shrink-0"
                 >
-                  {fetchingHistory ? 'Fetching...' : 'Analyze Repo'}
+                  {cooldown.isCooling('fetch_repo') ? (
+                    <CooldownButtonContent
+                      isCooling={true}
+                      remainingSeconds={cooldown.getRemainingSeconds('fetch_repo')}
+                      idleText="Analyze Repo"
+                      coolingText="Cooldown"
+                    />
+                  ) : fetchingHistory ? (
+                    'Fetching...'
+                  ) : (
+                    'Analyze Repo'
+                  )}
                 </button>
               </div>
             </div>
@@ -1618,10 +1836,19 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => loadRepositories(repoAccountInput)}
-                  disabled={loadingRepos}
+                  disabled={loadingRepos || cooldown.isCooling('load_repos')}
                   className="px-3.5 py-2 bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-neutral-200 rounded-xl transition-all border border-neutral-700 disabled:opacity-50 shrink-0 flex items-center gap-1.5"
                 >
-                  {loadingRepos ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                  {cooldown.isCooling('load_repos') ? (
+                    <span className="font-mono text-amber-400 flex items-center gap-1">
+                      <Timer className="w-3.5 h-3.5 animate-spin" />
+                      {cooldown.getRemainingSeconds('load_repos')}s
+                    </span>
+                  ) : loadingRepos ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Search className="w-3.5 h-3.5" />
+                  )}
                   <span>{repoAccountInput.trim() ? 'Load Account' : 'Explore Public'}</span>
                 </button>
               </div>
@@ -1634,6 +1861,7 @@ export default function App() {
                     setRepoAccountInput('');
                     loadRepositories('');
                   }}
+                  disabled={cooldown.isCooling('load_repos')}
                   className={`text-[10px] font-mono px-2 py-0.5 rounded-lg border transition-all ${
                     !repoAccountInput ? 'bg-purple-600/30 text-purple-300 border-purple-500/50 font-bold' : 'bg-neutral-800 text-neutral-400 border-neutral-700 hover:text-neutral-200'
                   }`}
@@ -1659,6 +1887,7 @@ export default function App() {
                       setRepoAccountInput(acc.id);
                       loadRepositories(acc.id);
                     }}
+                    disabled={cooldown.isCooling('load_repos')}
                     className={`text-[10px] font-mono px-2 py-0.5 rounded-lg border transition-all flex items-center gap-1 ${
                       repoAccountInput.toLowerCase() === acc.id.toLowerCase() ? 'bg-purple-600/30 text-purple-300 border-purple-500/50 font-bold' : 'bg-neutral-800 text-neutral-400 border-neutral-700 hover:text-neutral-200'
                     }`}
@@ -1736,10 +1965,10 @@ export default function App() {
                         fetchAndAnalyzeRepo(selectedRepoFullNames[0]);
                       }
                     }}
-                    disabled={fetchingHistory || analyzing}
-                    className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg transition-all"
+                    disabled={fetchingHistory || analyzing || cooldown.isCooling('fetch_repo')}
+                    className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg transition-all disabled:opacity-50"
                   >
-                    {fetchingHistory ? 'Fetching...' : `Analyze Selected (${selectedRepoFullNames[0]})`}
+                    {cooldown.isCooling('fetch_repo') ? `Cooldown (${cooldown.getRemainingSeconds('fetch_repo')}s)` : fetchingHistory ? 'Fetching...' : `Analyze Selected (${selectedRepoFullNames[0]})`}
                   </button>
                 </div>
               </div>
@@ -1849,10 +2078,10 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => fetchAndAnalyzeRepo(repo.full_name)}
-                          disabled={fetchingHistory || analyzing}
+                          disabled={fetchingHistory || analyzing || cooldown.isCooling('fetch_repo')}
                           className="text-[10px] text-neutral-300 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-blue-600 hover:text-white transition-colors shrink-0 font-medium disabled:opacity-40"
                         >
-                          {fetchingHistory ? 'Fetching...' : 'Analyze History'}
+                          {cooldown.isCooling('fetch_repo') ? `${cooldown.getRemainingSeconds('fetch_repo')}s` : fetchingHistory ? 'Fetching...' : 'Analyze History'}
                         </button>
                       </div>
                     );
