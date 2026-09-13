@@ -220,8 +220,11 @@ function parseGitLog(rawLog: string) {
     if (files.length === 0) {
       for (const dl of diffLines) {
         if (dl.startsWith('diff --git')) {
-          const parts = dl.split(' b/');
-          if (parts[1]) files.push(parts[1].trim());
+          const match = dl.match(/diff --git\s+(?:a\/|b\/)?(\S+)\s+(?:a\/|b\/)?(\S+)/);
+          if (match) {
+            const file = match[2] || match[1];
+            if (file && !files.includes(file)) files.push(file.trim());
+          }
         }
       }
     }
@@ -266,10 +269,17 @@ function parseGitLog(rawLog: string) {
     }
   }
 
-  // 3. Immediate fix detection (next commit touches overlapping files and has fix/patch)
-  for (let i = 0; i < commits.length - 1; i++) {
-    const current = commits[i];
-    const next = commits[i + 1];
+  // 3. Immediate fix detection (next chronologically following commit touches overlapping files and has fix/patch)
+  const parseCommitTimestamp = (dateStr: string): number => {
+    const parsed = Date.parse(dateStr);
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
+  const chronological = [...commits].sort((a, b) => parseCommitTimestamp(a.date) - parseCommitTimestamp(b.date));
+
+  for (let i = 0; i < chronological.length - 1; i++) {
+    const current = chronological[i];
+    const next = chronological[i + 1];
 
     if (current.verdict === 'OK' && !current.isRevert && FIX_PATTERN.test(next.subject)) {
       // check file overlap
@@ -282,7 +292,8 @@ function parseGitLog(rawLog: string) {
     }
   }
 
-  return commits;
+  // Ensure commits are returned newest-first so every newer commit is above the previous
+  return [...commits].sort((a, b) => parseCommitTimestamp(b.date) - parseCommitTimestamp(a.date));
 }
 
 function computeStats(commits: any[]) {
@@ -305,8 +316,11 @@ function computeStats(commits: any[]) {
       }
     }
 
-    // Date grouping
-    const dateStr = c.date.split(' ').slice(1, 4).join(' ') || 'Recent';
+    // Date grouping (day level)
+    const parsedDate = new Date(c.date);
+    const dateStr = !isNaN(parsedDate.getTime()) 
+      ? parsedDate.toISOString().split('T')[0] 
+      : (c.date.split(' ').slice(1, 4).join(' ') || 'Recent');
     dateCounts[dateStr] = (dateCounts[dateStr] || 0) + 1;
 
     // Theme keywords from subject
@@ -331,9 +345,17 @@ function computeStats(commits: any[]) {
 }
 
 function generateMarkdownOutputs(commits: any[], stats: any, llmStuffText: string) {
+  const parseCommitTimestamp = (dateStr: string): number => {
+    const parsed = Date.parse(dateStr);
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
+  // Sort reverse-chronologically: newest commit first (above previous/older commits)
+  const orderedCommits = [...commits].sort((a, b) => parseCommitTimestamp(b.date) - parseCommitTimestamp(a.date));
+
   // CORRECT.md
-  let correctMd = `# Correct Commits Ledger (CORRECT.md)\n\n> Full content and diffs of every commit that succeeded without failure or immediate reversion.\n\n`;
-  const correctCommits = commits.filter(c => c.verdict === 'OK');
+  let correctMd = `# Correct Commits Ledger (CORRECT.md)\n\n> Full content and diffs of every commit that succeeded without failure or immediate reversion (newest commits first).\n\n`;
+  const correctCommits = orderedCommits.filter(c => c.verdict === 'OK');
   for (const c of correctCommits) {
     correctMd += `## ${c.date} -- ${c.subject} (\`${c.shortHash}\`)\n\n`;
     correctMd += `**Author:** ${c.author}\n\n`;
@@ -344,8 +366,8 @@ function generateMarkdownOutputs(commits: any[], stats: any, llmStuffText: strin
   }
 
   // WRONG.md
-  let wrongMd = `# Failed Commits Ledger (WRONG.md)\n\n> Record of every commit that failed, was reverted, or required immediate patching, paired with its recovery link.\n\n`;
-  const wrongCommits = commits.filter(c => c.verdict === 'WRONG');
+  let wrongMd = `# Failed Commits Ledger (WRONG.md)\n\n> Record of every commit that failed, was reverted, or required immediate patching, paired with its recovery link (newest commits first).\n\n`;
+  const wrongCommits = orderedCommits.filter(c => c.verdict === 'WRONG');
   for (const c of wrongCommits) {
     wrongMd += `## ${c.date} -- ${c.subject} (\`${c.shortHash}\`)\n\n`;
     wrongMd += `**Reason:** ${c.reason || 'Failed or reverted commit'}\n`;
@@ -541,25 +563,75 @@ app.post("/api/github/verify", async (req, res) => {
 
 app.post("/api/github/repos", async (req, res) => {
   try {
-    const { token } = req.body;
-    if (!token) return res.status(400).json({ error: "No token provided" });
-
-    const response = await fetch("https://api.github.com/user/repos?sort=updated&per_page=100", {
-      headers: { Authorization: `Bearer ${token}`, "User-Agent": "Commit-Archaeology-Engine" }
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      return res.status(response.status).json({ error: text });
+    const { token, account, query } = req.body;
+    const headers: Record<string, string> = {
+      Accept: "application/vnd.github.v3+json",
+      "User-Agent": "Commit-Archaeology-Engine"
+    };
+    if (token && token.trim()) {
+      headers.Authorization = `Bearer ${token.trim()}`;
     }
 
-    const repos = await response.json();
+    let repos: any[] = [];
+
+    // Case 1: Specific account/username requested
+    if (account && account.trim()) {
+      const cleanAccount = account.trim();
+      let response = await fetch(`https://api.github.com/users/${encodeURIComponent(cleanAccount)}/repos?sort=updated&per_page=100`, { headers });
+      if (!response.ok && response.status === 404) {
+        // Try organization endpoint
+        response = await fetch(`https://api.github.com/orgs/${encodeURIComponent(cleanAccount)}/repos?sort=updated&per_page=100`, { headers });
+      }
+
+      if (response.ok) {
+        repos = await response.json();
+      } else {
+        const text = await response.text();
+        return res.status(response.status).json({ error: `Could not load repositories for account '${cleanAccount}': ${text}` });
+      }
+    } 
+    // Case 2: Authenticated user token provided with no specific account
+    else if (token && token.trim()) {
+      const response = await fetch("https://api.github.com/user/repos?sort=updated&per_page=100", { headers });
+      if (response.ok) {
+        repos = await response.json();
+      } else {
+        const text = await response.text();
+        return res.status(response.status).json({ error: text });
+      }
+    } 
+    // Case 3: No account or token provided - automatically fetch trending / popular public repositories
+    else {
+      const searchQuery = query && query.trim() ? encodeURIComponent(query.trim()) : 'stars:>500+sort:updated-desc';
+      const searchRes = await fetch(`https://api.github.com/search/repositories?q=${searchQuery}&per_page=50`, { headers });
+      if (searchRes.ok) {
+        const data = await searchRes.json();
+        repos = data.items || [];
+      } else {
+        // Fallback curated popular public repos
+        repos = [
+          { id: 10270250, name: "react", full_name: "facebook/react", private: false, updated_at: new Date().toISOString() },
+          { id: 70107786, name: "next.js", full_name: "vercel/next.js", private: false, updated_at: new Date().toISOString() },
+          { id: 593740924, name: "ui", full_name: "shadcn-ui/ui", private: false, updated_at: new Date().toISOString() },
+          { id: 11730342, name: "vue", full_name: "vuejs/core", private: false, updated_at: new Date().toISOString() },
+          { id: 2325298, name: "linux", full_name: "torvalds/linux", private: false, updated_at: new Date().toISOString() },
+          { id: 10639145, name: "tailwindcss", full_name: "tailwindlabs/tailwindcss", private: false, updated_at: new Date().toISOString() },
+          { id: 237159, name: "express", full_name: "expressjs/express", private: false, updated_at: new Date().toISOString() },
+          { id: 14098069, name: "freeCodeCamp", full_name: "freeCodeCamp/freeCodeCamp", private: false, updated_at: new Date().toISOString() }
+        ];
+      }
+    }
+
+    if (!Array.isArray(repos)) repos = [];
+
     res.json(repos.map((r: any) => ({ 
-      id: r.id, 
-      name: r.name, 
-      full_name: r.full_name, 
-      private: r.private, 
-      updated_at: r.updated_at 
+      id: r.id || Math.random(), 
+      name: r.name || (r.full_name ? r.full_name.split('/')[1] : 'repository'), 
+      full_name: r.full_name || `${account || 'github'}/${r.name}`, 
+      private: !!r.private, 
+      stargazers_count: r.stargazers_count || 0,
+      description: r.description || '',
+      updated_at: r.updated_at || new Date().toISOString() 
     })));
   } catch (err: any) {
     console.error("GitHub repos error:", err);
@@ -569,38 +641,42 @@ app.post("/api/github/repos", async (req, res) => {
 
 app.post("/api/github/history", async (req, res) => {
   try {
-    const { token, repoFullName, limit = 15, fetchAll = false } = req.body;
-    if (!token || !repoFullName) return res.status(400).json({ error: "Missing token or repoFullName" });
+    let { token, repoFullName, limit = 'all', fetchAll = true } = req.body;
+    if (!repoFullName) return res.status(400).json({ error: "Missing repoFullName" });
 
-    const headers = { Authorization: `Bearer ${token}`, "User-Agent": "Commit-Archaeology-Engine" };
+    // Clean repoFullName in case a full GitHub URL was passed
+    repoFullName = repoFullName.trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/^\/+|\/+$/g, '');
+
+    const headers: Record<string, string> = { 
+      Accept: "application/vnd.github.v3+json",
+      "User-Agent": "Commit-Archaeology-Engine" 
+    };
+
+    if (token && token.trim()) {
+      headers.Authorization = `Bearer ${token.trim()}`;
+    }
 
     let commitList: any[] = [];
-    
-    if (fetchAll) {
-      let page = 1;
-      while (true) {
-        const commitsRes = await fetch(`https://api.github.com/repos/${repoFullName}/commits?per_page=100&page=${page}`, { headers });
-        if (!commitsRes.ok) {
-           if (page === 1) {
-             const text = await commitsRes.text();
-             return res.status(commitsRes.status).json({ error: text });
-           } else {
-             break;
-           }
-        }
-        const data = await commitsRes.json();
-        if (!data || data.length === 0) break;
-        commitList.push(...data);
-        if (data.length < 100) break;
-        page++;
-      }
-    } else {
-      const commitsRes = await fetch(`https://api.github.com/repos/${repoFullName}/commits?per_page=${limit}`, { headers });
+    const shouldFetchAll = fetchAll === true || limit === 'all' || Number(limit) >= 100 || !limit;
+    const maxCommits = shouldFetchAll ? 1000 : Math.max(1, Number(limit) || 50);
+
+    let page = 1;
+    while (commitList.length < maxCommits) {
+      const perPage = Math.min(100, maxCommits - commitList.length);
+      const commitsRes = await fetch(`https://api.github.com/repos/${repoFullName}/commits?per_page=${perPage}&page=${page}`, { headers });
       if (!commitsRes.ok) {
-        const text = await commitsRes.text();
-        return res.status(commitsRes.status).json({ error: text });
+        if (page === 1) {
+          const text = await commitsRes.text();
+          return res.status(commitsRes.status).json({ error: text });
+        } else {
+          break;
+        }
       }
-      commitList = await commitsRes.json();
+      const data = await commitsRes.json();
+      if (!Array.isArray(data) || data.length === 0) break;
+      commitList.push(...data);
+      if (data.length < perPage) break;
+      page++;
     }
 
     const fetchCommitDetail = async (c: any) => {
@@ -609,16 +685,23 @@ app.post("/api/github/history", async (req, res) => {
         if (!detailRes.ok) return null;
         const detail = await detailRes.json();
         
-        let logPart = `commit ${c.sha}\n`;
-        logPart += `Author: ${c.commit.author.name} <${c.commit.author.email}>\n`;
-        logPart += `Date:   ${c.commit.author.date}\n\n`;
-        logPart += `    ${c.commit.message.split('\n').join('\n    ')}\n\n`;
+        const authorName = c.commit?.author?.name || c.commit?.committer?.name || c.author?.login || 'Git Author';
+        const authorEmail = c.commit?.author?.email || c.commit?.committer?.email || 'git@archaeology.local';
+        const commitDate = c.commit?.author?.date || c.commit?.committer?.date || new Date().toISOString();
+        const commitMsg = c.commit?.message || 'No commit message';
 
-        if (detail.files) {
+        let logPart = `commit ${c.sha}\n`;
+        logPart += `Author: ${authorName} <${authorEmail}>\n`;
+        logPart += `Date:   ${commitDate}\n\n`;
+        logPart += `    ${commitMsg.split('\n').join('\n    ')}\n\n`;
+
+        if (detail.files && detail.files.length > 0) {
           for (const file of detail.files) {
              logPart += `diff --git a/${file.filename} b/${file.filename}\n`;
              if (file.patch) {
                logPart += `${file.patch}\n`;
+             } else {
+               logPart += `--- a/${file.filename}\n+++ b/${file.filename}\n@@ -1,1 +1,1 @@\n+[${file.status || 'modified'} file: ${file.filename}]\n`;
              }
           }
         }
@@ -630,14 +713,15 @@ app.post("/api/github/history", async (req, res) => {
     };
 
     let rawLogText = "";
-    // Fetch in chunks of 5 to avoid GitHub rate limits while remaining fast
-    for (let i = 0; i < commitList.length; i += 5) {
-      const chunk = commitList.slice(i, i + 5);
+    // Fetch commit details in concurrent chunks of 10 for fast throughput
+    const chunkSize = 10;
+    for (let i = 0; i < commitList.length; i += chunkSize) {
+      const chunk = commitList.slice(i, i + chunkSize);
       const chunkResults = await Promise.all(chunk.map((c: any) => fetchCommitDetail(c)));
       rawLogText += chunkResults.filter(Boolean).join('');
     }
 
-    res.json({ rawLogText });
+    res.json({ rawLogText, totalCommits: commitList.length });
   } catch (err: any) {
     console.error("GitHub history error:", err);
     res.status(500).json({ error: err.message || "Failed to fetch history" });
@@ -676,17 +760,31 @@ app.post("/api/github/push", async (req, res) => {
       })
     });
 
-    if (!createRepoRes.ok && createRepoRes.status !== 422) {
+    if (!createRepoRes.ok) {
       const text = await createRepoRes.text();
-      let errMsg = "Failed to create repository";
+      let isAlreadyExists = false;
       try {
-        errMsg = JSON.parse(text).message || errMsg;
+        const parsed = JSON.parse(text);
+        if (createRepoRes.status === 422 && parsed.errors?.some((e: any) => e.message?.toLowerCase().includes('already exists') || e.message?.toLowerCase().includes('name already exists') || e.code === 'custom')) {
+          isAlreadyExists = true;
+        }
       } catch (e) {}
-      return res.status(createRepoRes.status).json({ error: errMsg });
+
+      if (!isAlreadyExists && createRepoRes.status !== 422) {
+        let errMsg = "Failed to create repository";
+        try {
+          errMsg = JSON.parse(text).message || errMsg;
+        } catch (e) {}
+        return res.status(createRepoRes.status).json({ error: errMsg });
+      }
     }
 
-    // Wait briefly for repo initialization
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Poll until repo and contents are ready (up to 5 attempts)
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const checkRepo = await fetch(`https://api.github.com/repos/${owner}/${repoName}`, { headers });
+      if (checkRepo.ok) break;
+      await new Promise(resolve => setTimeout(resolve, 800));
+    }
 
     const results = [];
     for (const f of files) {

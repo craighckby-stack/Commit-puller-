@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import JSZip from 'jszip';
 import { 
   GitCommit, CheckCircle2, XCircle, Brain, FileCode, Search, 
   Download, RefreshCw, Layers, Terminal, Sparkles, Copy, Check, Plus, Tag, X,
   Github, UploadCloud, Lock, Globe, ExternalLink, ShieldCheck, AlertCircle, FolderGit2,
-  Settings, Key, Cpu, User, Save, Eye, EyeOff
+  Settings, Key, Cpu, User, Save, Eye, EyeOff, FolderDown, Archive, Star
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { CommitRecord, CommitStats } from './types';
@@ -35,7 +36,7 @@ export default function App() {
   const [githubToken, setGithubToken] = useState<string>(() => localStorage.getItem('cae_github_pat') || '');
   const [githubAccount, setGithubAccount] = useState<string>(() => localStorage.getItem('cae_github_account') || '');
   const [geminiApiKey, setGeminiApiKey] = useState<string>(() => localStorage.getItem('cae_gemini_api_key') || '');
-  const [commitLimit, setCommitLimit] = useState<number>(() => parseInt(localStorage.getItem('cae_commit_limit') || '20', 10));
+  const [commitLimit, setCommitLimit] = useState<number>(() => parseInt(localStorage.getItem('cae_commit_limit') || '500', 10));
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     const saved = localStorage.getItem('cae_selected_model');
     if (saved && ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.1-pro-preview'].includes(saved)) return saved;
@@ -54,11 +55,18 @@ export default function App() {
   const [userRepos, setUserRepos] = useState<any[]>([]);
   const [showRepoModal, setShowRepoModal] = useState<boolean>(false);
   const [fetchingHistory, setFetchingHistory] = useState<boolean>(false);
-  const [analyzeEntireHistory, setAnalyzeEntireHistory] = useState<boolean>(false);
+  const [analyzeEntireHistory, setAnalyzeEntireHistory] = useState<boolean>(true);
+
+  // Public GitHub Repository discovery & account switcher state
+  const [repoAccountInput, setRepoAccountInput] = useState<string>(() => localStorage.getItem('cae_github_account') || '');
+  const [repoSearchFilter, setRepoSearchFilter] = useState<string>('');
+  const [directRepoInput, setDirectRepoInput] = useState<string>('');
+  const [loadingRepos, setLoadingRepos] = useState<boolean>(false);
+  const [repoLoadError, setRepoLoadError] = useState<string | null>(null);
 
   const [repoName, setRepoName] = useState<string>('Archaeology-Engine');
   const [isPrivateRepo, setIsPrivateRepo] = useState<boolean>(false);
-  const [targetFolder, setTargetFolder] = useState<string>('docs');
+  const [targetFolder, setTargetFolder] = useState<string>('archaeology');
   const [pushScope, setPushScope] = useState<'deliverables' | 'full_app'>('deliverables');
 
   const [pushingToGitHub, setPushingToGitHub] = useState<boolean>(false);
@@ -70,11 +78,41 @@ export default function App() {
   } | null>(null);
   const [pushError, setPushError] = useState<string | null>(null);
 
-  // Load sample on mount
+  const loadRepositories = async (targetAccount?: string) => {
+    setLoadingRepos(true);
+    setRepoLoadError(null);
+    try {
+      const accountToFetch = targetAccount !== undefined ? targetAccount.trim() : repoAccountInput.trim();
+      const res = await fetch('/api/github/repos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          token: githubToken.trim(), 
+          account: accountToFetch,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setRepoLoadError(data.error || 'Failed to load repositories');
+        setUserRepos([]);
+      } else if (Array.isArray(data)) {
+        setUserRepos(data);
+      }
+    } catch (err: any) {
+      setRepoLoadError('Failed to connect to GitHub repository service');
+      setUserRepos([]);
+    } finally {
+      setLoadingRepos(false);
+    }
+  };
+
+  // Load sample and initial repositories on mount
   useEffect(() => {
     loadSampleRepo();
     if (githubToken) {
       verifyGitHubToken(githubToken);
+    } else {
+      loadRepositories();
     }
   }, []);
 
@@ -85,9 +123,12 @@ export default function App() {
     localStorage.setItem('cae_gemini_api_key', geminiApiKey.trim());
     localStorage.setItem('cae_commit_limit', commitLimit.toString());
     localStorage.setItem('cae_selected_model', selectedModel);
+    setRepoAccountInput(githubAccount.trim());
 
     if (githubToken.trim()) {
       verifyGitHubToken(githubToken.trim());
+    } else {
+      loadRepositories(githubAccount.trim());
     }
 
     setConfigSavedNotice(true);
@@ -108,29 +149,21 @@ export default function App() {
       if (!res.ok) {
         setTokenError(data.error || 'Invalid GitHub Token');
         setGithubUser(null);
+        loadRepositories(githubAccount);
       } else {
         setGithubUser(data);
         if (!githubAccount) {
           setGithubAccount(data.login);
+          setRepoAccountInput(data.login);
           localStorage.setItem('cae_github_account', data.login);
         }
         
-        // Fetch user repositories automatically
-        const reposRes = await fetch('/api/github/repos', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: tokenToVerify.trim() }),
-        });
-        if (reposRes.ok) {
-          const reposData = await reposRes.json();
-          if (Array.isArray(reposData)) {
-            setUserRepos(reposData);
-          }
-        }
+        loadRepositories(githubAccount || data.login);
       }
     } catch (err: any) {
       setTokenError('Failed to verify GitHub token');
       setGithubUser(null);
+      loadRepositories(githubAccount);
     } finally {
       setVerifyingToken(false);
     }
@@ -150,12 +183,15 @@ export default function App() {
       { path: 'CORRECT.md', content: correctMd },
       { path: 'WRONG.md', content: wrongMd },
       { path: 'stuff.md', content: stuffMd },
+      { path: 'COMMITS_LEDGER.md', content: `# Complete Commit Ledger\n\nTotal Commits Analyzed: ${commits.length}\n\n` + commits.map(c => `### [${c.verdict}] ${c.shortHash} - ${c.subject}\n**Author:** ${c.author} | **Date:** ${c.date}\n${c.reason ? `**Note:** ${c.reason}\n` : ''}\n\`\`\`diff\n${c.diff}\n\`\`\`\n`).join('\n---\n\n') },
+      { path: 'RAW_GIT_LOG.txt', content: rawLogInput || 'No raw git log captured' },
     ];
 
     if (pushScope === 'full_app') {
       filesToPush.push(
-        { path: 'README.md', content: `# Archaeology Engine\n\nGenerated by Commit Archaeology Engine (CAE).\n\n## Deliverables\n- \`CORRECT.md\` - Success ledger\n- \`WRONG.md\` - Failure & recovery ledger\n- \`stuff.md\` - Gemini intelligence\n` },
-        { path: 'metadata.json', content: JSON.stringify({ name: "Archaeology Engine", description: "Commit Archaeology Engine deliverables" }, null, 2) }
+        { path: 'README.md', content: `# Archaeology Engine Deliverables\n\nGenerated by Commit Archaeology Engine (CAE).\n\n## Included Deliverables in this Folder\n- \`CORRECT.md\` - Success ledger with all confirmed clean commits (newest first)\n- \`WRONG.md\` - Failure and recovery ledger with paired fix commits (newest first)\n- \`stuff.md\` - Gemini intelligence deep archaeological report\n- \`COMMITS_LEDGER.md\` - Complete per-commit breakdown and unified diffs\n- \`RAW_GIT_LOG.txt\` - Complete extracted git history\n` },
+        { path: 'SUMMARY.json', content: JSON.stringify({ stats, totalCommits: commits.length, timestamp: new Date().toISOString() }, null, 2) },
+        { path: 'metadata.json', content: JSON.stringify({ name: "Archaeology Engine Deliverables", description: "Commit Archaeology Engine deliverables" }, null, 2) }
       );
     }
 
@@ -248,29 +284,34 @@ export default function App() {
   };
 
   const fetchAndAnalyzeRepo = async (repoFullName: string) => {
-    if (!githubToken.trim()) {
-      alert("Please configure your GitHub Personal Access Token in Settings first.");
-      setIsSettingsPanelOpen(true);
+    if (!repoFullName || !repoFullName.trim()) {
+      alert("Please specify a valid repository name (e.g., owner/repo or full GitHub URL).");
       return;
     }
+    const cleanRepoName = repoFullName.trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/^\/+|\/+$/g, '');
     setFetchingHistory(true);
     setShowRepoModal(false);
     try {
       const res = await fetch('/api/github/history', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: githubToken.trim(), repoFullName, limit: commitLimit, fetchAll: analyzeEntireHistory }),
+        body: JSON.stringify({ 
+          token: githubToken.trim(), 
+          repoFullName: cleanRepoName, 
+          limit: commitLimit, 
+          fetchAll: analyzeEntireHistory 
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(`Failed to fetch history: ${data.error}`);
+        alert(`Failed to fetch history for ${cleanRepoName}: ${data.error || 'Repository not found or rate limited'}`);
         return;
       }
       setRawLogInput(data.rawLogText);
       await runAnalysis(data.rawLogText);
     } catch (err: any) {
       console.error("Failed to fetch history:", err);
-      alert("Error fetching repo history");
+      alert("Error fetching repo history. Check repository visibility and network connection.");
     } finally {
       setFetchingHistory(false);
     }
@@ -284,6 +325,40 @@ export default function App() {
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadFolderAsZip = async () => {
+    try {
+      const zip = new JSZip();
+      const folderName = targetFolder.trim() || 'cae-archaeology-deliverables';
+      const folder = zip.folder(folderName) || zip;
+
+      folder.file('CORRECT.md', correctMd);
+      folder.file('WRONG.md', wrongMd);
+      folder.file('stuff.md', stuffMd);
+      folder.file('RAW_GIT_LOG.txt', rawLogInput || '');
+      folder.file('SUMMARY.json', JSON.stringify({ stats, totalCommits: commits.length, generatedAt: new Date().toISOString() }, null, 2));
+      folder.file(
+        'COMMITS_LEDGER.md',
+        `# Complete Commit Ledger\n\nTotal Commits Analyzed: ${commits.length}\n\n` +
+          commits.map(c => `### [${c.verdict}] ${c.shortHash} - ${c.subject}\n**Author:** ${c.author} | **Date:** ${c.date}\n${c.reason ? `**Note:** ${c.reason}\n` : ''}\n\`\`\`diff\n${c.diff}\n\`\`\`\n`).join('\n---\n\n')
+      );
+      folder.file(
+        'README.md',
+        `# Commit Archaeology Engine Deliverables\n\nGenerated for repository history (${commits.length} commits analyzed).\n\n## Files in this Folder:\n- \`CORRECT.md\`: Clean/unbroken commits ledger\n- \`WRONG.md\`: Broken, reverted, and patched commits with recovery links\n- \`stuff.md\`: Gemini AI deep architectural insights and patterns\n- \`COMMITS_LEDGER.md\`: Complete commit-by-commit diff ledger\n- \`RAW_GIT_LOG.txt\`: Complete raw git log history\n- \`SUMMARY.json\`: Quantitative metrics and stats\n`
+      );
+
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${folderName}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to create ZIP package:', err);
+      alert('Failed to generate ZIP archive.');
+    }
   };
 
   const copyToClipboard = (text: string, tabName: string) => {
@@ -305,12 +380,14 @@ export default function App() {
     setCustomThemes(prev => prev.filter(t => t !== themeToRemove));
     if (selectedThemeFilter === themeToRemove) {
       setSelectedThemeFilter(null);
+      setSearchQuery('');
     }
   };
 
   const handleSelectThemeFilter = (theme: string) => {
     if (selectedThemeFilter === theme) {
       setSelectedThemeFilter(null);
+      setSearchQuery('');
     } else {
       setSelectedThemeFilter(theme);
       setSearchQuery(theme);
@@ -655,19 +732,26 @@ export default function App() {
                   <div>
                     <h3 className="text-base font-bold text-white flex items-center gap-2">
                       <Brain className="w-5 h-5 text-blue-400" />
-                      Archaeology Deliverables Ledger
+                      Archaeology Deliverables & Complete File Folder
                     </h3>
                     <p className="text-xs text-neutral-300 mt-1 max-w-xl">
-                      Three portable markdown files generated from raw git history ready for team documentation or downstream LLM postmortem context.
+                      Complete commit files ready for download or push to a new folder in GitHub. Every new commit is ordered chronologically newest-first.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2.5">
+                    <button
+                      onClick={downloadFolderAsZip}
+                      className="inline-flex items-center space-x-2 bg-blue-600 hover:bg-blue-500 text-white font-mono text-xs font-semibold px-4 py-2.5 rounded-xl transition-all shadow-sm"
+                    >
+                      <FolderDown className="w-4 h-4" />
+                      <span>Download All (Complete Folder .zip)</span>
+                    </button>
                     <button
                       onClick={() => setShowGitHubModal(true)}
                       className="inline-flex items-center space-x-2 bg-white hover:bg-neutral-200 text-black font-mono text-xs font-semibold px-4 py-2.5 rounded-xl transition-all shadow-sm"
                     >
                       <Github className="w-4 h-4" />
-                      <span>Create & Push GitHub Repo</span>
+                      <span>Push to New Folder</span>
                     </button>
                     <button
                       onClick={() => downloadFile('CORRECT.md', correctMd)}
@@ -925,14 +1009,20 @@ export default function App() {
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-neutral-300">GitHub Account / Username</label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-semibold text-neutral-300">GitHub Account / Username</label>
+                        <span className="text-[10px] text-neutral-500">Optional for public exploration</span>
+                      </div>
                       <input
                         type="text"
-                        placeholder="e.g. your-username"
+                        placeholder="e.g. octocat, torvalds, or leave blank"
                         value={githubAccount}
                         onChange={(e) => setGithubAccount(e.target.value)}
                         className="w-full bg-black text-xs font-mono px-3.5 py-2.5 rounded-xl border border-neutral-800 text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 transition-all"
                       />
+                      <p className="text-[10px] text-neutral-500">
+                        When left blank, the engine automatically browses and discovers public GitHub accounts and repositories.
+                      </p>
                     </div>
 
                     <div className={`space-y-1.5 pt-2 ${analyzeEntireHistory ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -1141,16 +1231,41 @@ export default function App() {
                 <p className="text-[10px] text-neutral-500">If repository does not exist on GitHub, it will be created automatically.</p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[11px] font-semibold text-neutral-300 block mb-1">Target Subfolder</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-semibold text-neutral-300">Target Folder on GitHub</label>
+                  </div>
                   <input
                     type="text"
                     value={targetFolder}
                     onChange={(e) => setTargetFolder(e.target.value)}
-                    placeholder="docs"
+                    placeholder="e.g. archaeology, history, docs (leave empty for root)"
                     className="w-full bg-black text-xs font-mono px-3.5 py-2.5 rounded-xl border border-neutral-800 text-neutral-200 focus:outline-none focus:border-blue-500"
                   />
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {['archaeology', 'history', 'commit-deliverables', 'docs'].map((f) => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => setTargetFolder(f)}
+                        className={`text-[10px] font-mono px-2 py-0.5 rounded-lg border transition-all ${
+                          targetFolder === f ? 'bg-blue-600/30 text-blue-300 border-blue-500/50' : 'bg-neutral-800 text-neutral-400 border-neutral-700 hover:text-neutral-200'
+                        }`}
+                      >
+                        /{f}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setTargetFolder('')}
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded-lg border transition-all ${
+                        targetFolder === '' ? 'bg-blue-600/30 text-blue-300 border-blue-500/50' : 'bg-neutral-800 text-neutral-400 border-neutral-700 hover:text-neutral-200'
+                      }`}
+                    >
+                      / (root)
+                    </button>
+                  </div>
                 </div>
 
                 <div>
@@ -1182,7 +1297,7 @@ export default function App() {
 
               {/* Scope Selection */}
               <div>
-                <label className="text-[11px] font-semibold text-neutral-300 block mb-1">Files to Push</label>
+                <label className="text-[11px] font-semibold text-neutral-300 block mb-1">Complete Files to Place in Folder</label>
                 <div className="space-y-2 bg-black p-3.5 rounded-xl border border-neutral-800 text-xs font-mono text-neutral-300">
                   <label className="flex items-center space-x-2 cursor-pointer">
                     <input
@@ -1192,7 +1307,7 @@ export default function App() {
                       onChange={() => setPushScope('deliverables')}
                       className="accent-blue-500"
                     />
-                    <span>Archaeology Deliverables (<code className="text-emerald-400">CORRECT.md</code>, <code className="text-rose-400">WRONG.md</code>, <code className="text-purple-400">stuff.md</code>)</span>
+                    <span>All Core Files (<code className="text-emerald-400">CORRECT.md</code>, <code className="text-rose-400">WRONG.md</code>, <code className="text-purple-400">stuff.md</code>, <code className="text-blue-400">COMMITS_LEDGER.md</code>, <code className="text-neutral-400">RAW_GIT_LOG.txt</code>)</span>
                   </label>
                   <label className="flex items-center space-x-2 cursor-pointer">
                     <input
@@ -1202,7 +1317,7 @@ export default function App() {
                       onChange={() => setPushScope('full_app')}
                       className="accent-blue-500"
                     />
-                    <span>Deliverables + README & App Manifest Metadata</span>
+                    <span>Complete Bundle + README.md & SUMMARY.json Metrics</span>
                   </label>
                 </div>
               </div>
@@ -1319,14 +1434,16 @@ export default function App() {
       {/* Select Repo Modal */}
       {showRepoModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-neutral-900 rounded-2xl max-w-2xl w-full p-6 sm:p-8 shadow-sm border border-neutral-800 space-y-4 max-h-[80vh] flex flex-col">
+          <div className="bg-neutral-900 rounded-2xl max-w-2xl w-full p-6 sm:p-8 shadow-sm border border-neutral-800 space-y-4 max-h-[88vh] flex flex-col">
             <div className="flex items-center justify-between shrink-0 border-b border-neutral-800/80 pb-4">
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   <Github className="w-4 h-4 text-blue-400" />
                   Select Repository to Analyze
                 </h3>
-                <p className="text-[11px] text-neutral-400 mt-1">Select a repository from your GitHub account to analyze its commit history automatically.</p>
+                <p className="text-[11px] text-neutral-400 mt-1">
+                  Analyze any public GitHub account, popular open-source repository, or your authenticated repositories.
+                </p>
               </div>
               <button 
                 onClick={() => setShowRepoModal(false)}
@@ -1336,10 +1453,124 @@ export default function App() {
               </button>
             </div>
 
-            <div className="flex items-center justify-between p-3 rounded-xl bg-neutral-800/50 border border-neutral-800/80 shrink-0">
+            {/* Direct Any Repo Analysis Bar */}
+            <div className="bg-black p-3 rounded-xl border border-neutral-800 space-y-2 shrink-0">
+              <label className="text-[11px] font-semibold text-neutral-300 flex items-center gap-1.5">
+                <Globe className="w-3.5 h-3.5 text-blue-400" />
+                Analyze Any Public GitHub Repository Directly
+              </label>
+              <div className="flex space-x-2">
+                <input
+                  type="text"
+                  placeholder="e.g. facebook/react, torvalds/linux, or https://github.com/shadcn-ui/ui"
+                  value={directRepoInput}
+                  onChange={(e) => setDirectRepoInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && directRepoInput.trim()) {
+                      fetchAndAnalyzeRepo(directRepoInput.trim());
+                    }
+                  }}
+                  className="flex-1 bg-neutral-900 text-xs font-mono px-3 py-2 rounded-xl border border-neutral-800 text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => directRepoInput.trim() && fetchAndAnalyzeRepo(directRepoInput.trim())}
+                  disabled={!directRepoInput.trim() || fetchingHistory}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-xs font-semibold rounded-xl transition-all shadow-sm shrink-0"
+                >
+                  {fetchingHistory ? 'Fetching...' : 'Analyze Repo'}
+                </button>
+              </div>
+            </div>
+
+            {/* Account Switcher & Public Exploration */}
+            <div className="space-y-2 shrink-0">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold text-neutral-300 flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-purple-400" />
+                  Browse Public Account / Organization
+                </label>
+                <span className="text-[10px] text-neutral-500">
+                  {repoAccountInput ? `Browsing @${repoAccountInput}` : 'Browsing Public GitHub Repos'}
+                </span>
+              </div>
+              <div className="flex space-x-2">
+                <input
+                  type="text"
+                  placeholder="Enter username/org (e.g. facebook, vercel, shadcn-ui) or leave empty"
+                  value={repoAccountInput}
+                  onChange={(e) => setRepoAccountInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      loadRepositories(repoAccountInput);
+                    }
+                  }}
+                  className="flex-1 bg-black text-xs font-mono px-3 py-2 rounded-xl border border-neutral-800 text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-purple-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => loadRepositories(repoAccountInput)}
+                  disabled={loadingRepos}
+                  className="px-3.5 py-2 bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-neutral-200 rounded-xl transition-all border border-neutral-700 disabled:opacity-50 shrink-0 flex items-center gap-1.5"
+                >
+                  {loadingRepos ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                  <span>{repoAccountInput.trim() ? 'Load Account' : 'Explore Public'}</span>
+                </button>
+              </div>
+
+              {/* Quick Account Chips */}
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRepoAccountInput('');
+                    loadRepositories('');
+                  }}
+                  className={`text-[10px] font-mono px-2 py-0.5 rounded-lg border transition-all ${
+                    !repoAccountInput ? 'bg-purple-600/30 text-purple-300 border-purple-500/50' : 'bg-neutral-800 text-neutral-400 border-neutral-700 hover:text-neutral-200'
+                  }`}
+                >
+                  ★ Popular Public
+                </button>
+                {['shadcn-ui', 'facebook', 'vercel', 'tailwindlabs', 'torvalds', 'vuejs'].map((acc) => (
+                  <button
+                    key={acc}
+                    type="button"
+                    onClick={() => {
+                      setRepoAccountInput(acc);
+                      loadRepositories(acc);
+                    }}
+                    className={`text-[10px] font-mono px-2 py-0.5 rounded-lg border transition-all ${
+                      repoAccountInput === acc ? 'bg-purple-600/30 text-purple-300 border-purple-500/50' : 'bg-neutral-800 text-neutral-400 border-neutral-700 hover:text-neutral-200'
+                    }`}
+                  >
+                    @{acc}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Filter loaded repositories */}
+            <div className="flex items-center space-x-2 shrink-0">
+              <div className="relative flex-1">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-neutral-500" />
+                <input
+                  type="text"
+                  placeholder="Filter loaded repositories..."
+                  value={repoSearchFilter}
+                  onChange={(e) => setRepoSearchFilter(e.target.value)}
+                  className="w-full bg-black text-xs font-mono pl-8 pr-3 py-1.5 rounded-xl border border-neutral-800 text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <span className="text-[11px] font-mono text-neutral-400 shrink-0">
+                {userRepos.filter(r => !repoSearchFilter || r.name.toLowerCase().includes(repoSearchFilter.toLowerCase()) || r.full_name.toLowerCase().includes(repoSearchFilter.toLowerCase())).length} repos
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-neutral-800/40 border border-neutral-800/60 shrink-0">
               <div className="flex flex-col">
                 <span className="text-xs font-semibold text-neutral-200">Analyze Entire Commit History</span>
-                <span className="text-[10px] text-neutral-400">Fetch all commits without limit. Warning: May take significant time and consume GitHub API rate limits.</span>
+                <span className="text-[10px] text-neutral-400">Fetch all commit pages across the complete git log.</span>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input 
@@ -1352,45 +1583,76 @@ export default function App() {
               </label>
             </div>
             
+            {/* Repository List */}
             <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-              {!githubToken ? (
-                <div className="text-center py-10 space-y-4">
-                  <p className="text-sm text-neutral-400">Please connect your GitHub account in settings to view repositories.</p>
-                  <button 
-                    onClick={() => { setShowRepoModal(false); setIsSettingsPanelOpen(true); }}
+              {loadingRepos ? (
+                <div className="text-center py-10 space-y-2">
+                  <RefreshCw className="w-5 h-5 animate-spin text-blue-400 mx-auto" />
+                  <p className="text-xs text-neutral-400">Loading public GitHub repositories...</p>
+                </div>
+              ) : repoLoadError ? (
+                <div className="text-center py-8 space-y-3 bg-rose-500/5 rounded-xl border border-rose-500/20 p-4">
+                  <p className="text-xs text-rose-400">{repoLoadError}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRepoAccountInput('');
+                      loadRepositories('');
+                    }}
                     className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-white transition-all shadow-sm"
                   >
-                    Open Settings
+                    <span>Load Public Repositories</span>
                   </button>
                 </div>
               ) : userRepos.length === 0 ? (
-                <div className="text-center py-10">
-                  {verifyingToken ? (
-                    <RefreshCw className="w-5 h-5 animate-spin text-blue-400 mx-auto" />
-                  ) : (
-                    <p className="text-sm text-neutral-400">No repositories found or failed to load.</p>
-                  )}
+                <div className="text-center py-10 space-y-3">
+                  <p className="text-sm text-neutral-400">No repositories found for this selection.</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRepoAccountInput('');
+                      loadRepositories('');
+                    }}
+                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-white transition-all shadow-sm"
+                  >
+                    <span>Load Public GitHub Repos</span>
+                  </button>
                 </div>
               ) : (
-                userRepos.map((repo) => (
-                  <button
-                    key={repo.id}
-                    onClick={() => fetchAndAnalyzeRepo(repo.full_name)}
-                    disabled={fetchingHistory || analyzing}
-                    className="w-full flex items-center justify-between p-3 rounded-xl bg-black border border-neutral-800 hover:border-blue-500/50 hover:bg-neutral-950 transition-all text-left group disabled:opacity-50"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-neutral-200">{repo.name}</span>
-                        {repo.private && <Lock className="w-3 h-3 text-neutral-500" />}
+                userRepos
+                  .filter(repo => !repoSearchFilter || repo.name.toLowerCase().includes(repoSearchFilter.toLowerCase()) || repo.full_name.toLowerCase().includes(repoSearchFilter.toLowerCase()) || (repo.description && repo.description.toLowerCase().includes(repoSearchFilter.toLowerCase())))
+                  .map((repo) => (
+                    <button
+                      key={repo.id}
+                      onClick={() => fetchAndAnalyzeRepo(repo.full_name)}
+                      disabled={fetchingHistory || analyzing}
+                      className="w-full flex items-center justify-between p-3 rounded-xl bg-black border border-neutral-800 hover:border-blue-500/50 hover:bg-neutral-950 transition-all text-left group disabled:opacity-50"
+                    >
+                      <div className="flex-1 min-w-0 pr-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-neutral-200 truncate">{repo.name}</span>
+                          {repo.private ? (
+                            <Lock className="w-3 h-3 text-neutral-500 shrink-0" />
+                          ) : (
+                            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-400 border border-neutral-700 shrink-0">public</span>
+                          )}
+                          {repo.stargazers_count > 0 && (
+                            <span className="text-[10px] text-amber-400/80 flex items-center gap-0.5 font-mono shrink-0">
+                              <Star className="w-3 h-3 fill-amber-400/80" />
+                              {repo.stargazers_count > 1000 ? `${(repo.stargazers_count / 1000).toFixed(1)}k` : repo.stargazers_count}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-neutral-500 font-mono mt-0.5 block truncate">{repo.full_name}</span>
+                        {repo.description && (
+                          <p className="text-[10px] text-neutral-400 mt-1 line-clamp-1">{repo.description}</p>
+                        )}
                       </div>
-                      <span className="text-[10px] text-neutral-500 font-mono mt-0.5 block">{repo.full_name}</span>
-                    </div>
-                    <div className="text-[10px] text-neutral-400 px-2 py-1 rounded bg-neutral-800/50 group-hover:bg-blue-500/20 group-hover:text-blue-300 transition-colors">
-                      {fetchingHistory ? 'Fetching...' : 'Analyze'}
-                    </div>
-                  </button>
-                ))
+                      <div className="text-[10px] text-neutral-400 px-3 py-1.5 rounded-lg bg-neutral-800/60 group-hover:bg-blue-600 group-hover:text-white transition-colors shrink-0 font-medium">
+                        {fetchingHistory ? 'Fetching...' : 'Analyze History'}
+                      </div>
+                    </button>
+                  ))
               )}
             </div>
           </div>
