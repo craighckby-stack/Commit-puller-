@@ -938,8 +938,8 @@ app.post("/api/github/history", async (req, res) => {
     // Clean repoFullName in case a full GitHub URL was passed
     repoFullName = repoFullName.trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/^\/+|\/+$/g, '');
 
-    const shouldFetchAll = fetchAll === true || limit === 'all' || Number(limit) >= 100 || !limit;
-    const maxCommits = shouldFetchAll ? 200 : Math.max(1, Number(limit) || 50);
+    const shouldFetchAll = fetchAll === true || limit === 'all' || !limit;
+    const maxCommits = shouldFetchAll ? 1000 : Math.max(1, Math.min(2000, Number(limit) || 200));
 
     let parsedCommits: Array<{ sha: string, author: string, date: string, message: string }> = [];
 
@@ -1107,9 +1107,87 @@ app.post("/api/github/history", async (req, res) => {
   }
 });
 
+function mergeAndAppendContent(existing: string, incoming: string, filename: string): string {
+  if (!existing || !existing.trim()) return incoming;
+  if (!incoming || !incoming.trim()) return existing;
+
+  const baseName = filename.split('/').pop() || filename;
+
+  if (baseName === 'CORRECT.md' || baseName === 'WRONG.md') {
+    let cleanedIncoming = incoming.trim();
+    // Strip duplicate top-level title header if existing already has one
+    const titleMatch = cleanedIncoming.match(/^#\s+[^\n]+\n+(?:>[^\n]+\n+)?/);
+    if (titleMatch && existing.includes('# ')) {
+      cleanedIncoming = cleanedIncoming.substring(titleMatch[0].length).trim();
+    }
+    
+    // Extract incoming entries by header and filter out entries whose hashes already exist in the file
+    const incomingEntries = cleanedIncoming.split(/(?=^##\s+)/gm).filter(b => b.trim());
+    const newEntries = incomingEntries.filter(entry => {
+      const hashMatch = entry.match(/\(`?([0-9a-fA-F]{6,40})`?\)/);
+      if (hashMatch) {
+        return !existing.includes(hashMatch[1]);
+      }
+      return true;
+    });
+
+    if (newEntries.length === 0) {
+      return existing; // All entries already present in the file
+    }
+
+    const appendChunk = newEntries.join('\n\n');
+    return `${existing.trimEnd()}\n\n---\n\n<!-- CAE Append Session: ${new Date().toISOString()} -->\n\n${appendChunk}\n`;
+  }
+
+  if (baseName === 'stuff.md') {
+    let cleanedIncoming = incoming.trim();
+    const titleMatch = cleanedIncoming.match(/^#\s+[^\n]+\n+(?:>[^\n]+\n+)?/);
+    if (titleMatch && existing.includes('# ')) {
+      cleanedIncoming = cleanedIncoming.substring(titleMatch[0].length).trim();
+    }
+    return `${existing.trimEnd()}\n\n---\n\n## Appended Analysis Stream (${new Date().toISOString().replace('T', ' ').substring(0, 19)})\n\n${cleanedIncoming}\n`;
+  }
+
+  if (baseName === 'COMMITS_LEDGER.md') {
+    let cleanedIncoming = incoming.trim();
+    const titleMatch = cleanedIncoming.match(/^#\s+Complete Commit Ledger\n+/);
+    if (titleMatch && existing.includes('# Complete Commit Ledger')) {
+      cleanedIncoming = cleanedIncoming.substring(titleMatch[0].length).trim();
+    }
+    return `${existing.trimEnd()}\n\n---\n\n${cleanedIncoming}\n`;
+  }
+
+  if (baseName.endsWith('.json')) {
+    try {
+      const existingObj = JSON.parse(existing);
+      const incomingObj = JSON.parse(incoming);
+      if (Array.isArray(existingObj) && Array.isArray(incomingObj)) {
+        return JSON.stringify([...existingObj, ...incomingObj], null, 2);
+      }
+      return JSON.stringify({
+        ...existingObj,
+        ...incomingObj,
+        runs: [
+          ...(Array.isArray(existingObj.runs) ? existingObj.runs : [existingObj]),
+          incomingObj
+        ],
+        lastAppendedAt: new Date().toISOString()
+      }, null, 2);
+    } catch {
+      return `${existing.trimEnd()}\n\n${incoming}\n`;
+    }
+  }
+
+  if (baseName.endsWith('.txt') || baseName === 'RAW_GIT_LOG.txt') {
+    return `${existing.trimEnd()}\n\n${incoming}\n`;
+  }
+
+  return `${existing.trimEnd()}\n\n---\n\n${incoming}\n`;
+}
+
 app.post("/api/github/push", async (req, res) => {
   try {
-    const { token, repoName, isPrivate, targetFolder, files } = req.body;
+    const { token, repoName, isPrivate, targetFolder, files, appendOnly = true } = req.body;
     if (!token) return res.status(400).json({ error: "No token provided" });
 
     const headers = {
@@ -1170,20 +1248,33 @@ app.post("/api/github/push", async (req, res) => {
       const filePath = targetFolder ? `${targetFolder}/${f.path}` : f.path;
       const fileUrl = `https://api.github.com/repos/${owner}/${repoName}/contents/${filePath}`;
       
-      // Check for existing file SHA to allow overwriting
-      let sha = undefined;
+      // Check for existing file SHA & content to allow appending instead of overwriting
+      let sha: string | undefined = undefined;
+      let existingContent = "";
       const checkRes = await fetch(fileUrl, { headers });
       if (checkRes.ok) {
         const fileData = await checkRes.json();
         sha = fileData.sha;
+        if (fileData.content) {
+          try {
+            existingContent = Buffer.from(fileData.content, fileData.encoding || 'base64').toString('utf-8');
+          } catch (e) {
+            existingContent = "";
+          }
+        }
       }
 
-      const contentBase64 = Buffer.from(f.content || '').toString('base64');
+      // Add to file (append) if file exists and appendOnly mode is active
+      const finalContent = (existingContent && appendOnly)
+        ? mergeAndAppendContent(existingContent, f.content || '', f.path)
+        : (f.content || '');
+
+      const contentBase64 = Buffer.from(finalContent).toString('base64');
       const uploadRes = await fetch(fileUrl, {
         method: "PUT",
         headers,
         body: JSON.stringify({
-          message: `CAE: Update ${f.path}`,
+          message: sha ? `CAE: Append to ${f.path}` : `CAE: Create ${f.path}`,
           content: contentBase64,
           sha
         })
@@ -1192,7 +1283,7 @@ app.post("/api/github/push", async (req, res) => {
       if (uploadRes.ok) {
         results.push({
           path: f.path,
-          status: sha ? "updated" : "created",
+          status: sha ? "appended" : "created",
           url: `${repoUrl}/blob/main/${filePath}`
         });
       } else {
