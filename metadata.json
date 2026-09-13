@@ -1,0 +1,6 @@
+{
+  "name": "Commit Archaeology Engine",
+  "description": "Analyze git repositories or commit logs to surface correct commits, fixed failures, and cross-commit intelligence powered by Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
