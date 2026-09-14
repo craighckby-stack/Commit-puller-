@@ -2,25 +2,30 @@
 <html lang="en" dir="ltr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Commit Archaeology Engine</title>
     <meta name="description" content="Analyze git repositories or commit logs to surface correct commits, fixed failures, and cross-commit intelligence powered by Gemini." />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="color-scheme" content="dark light" />
+
+    <!-- Open Graph / Social Media Meta Tags -->
     <meta property="og:title" content="Commit Archaeology Engine" />
     <meta property="og:description" content="Analyze git repositories or commit logs to surface correct commits, fixed failures, and cross-commit intelligence powered by Gemini." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Commit Archaeology Engine" />
     <meta name="twitter:description" content="Analyze git repositories or commit logs to surface correct commits, fixed failures, and cross-commit intelligence powered by Gemini." />
+
+    <!-- Performance & Preloading -->
     <link rel="modulepreload" href="/src/main.tsx" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root" role="main"></div>
     <noscript>
-      <div style="padding: 2rem; text-align: center; font-family: system-ui, -apple-system, sans-serif;">
-        <h1>JavaScript Required</h1>
-        <p>Please enable JavaScript to run the Commit Archaeology Engine application.</p>
+      <div style="padding: 2rem; text-align: center; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #f8fafc; background-color: #0f172a; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+        <h1 style="font-size: 1.5rem; margin-bottom: 0.5rem; font-weight: 600;">JavaScript Required</h1>
+        <p style="color: #94a3b8; max-width: 440px; margin: 0 auto; line-height: 1.5;">Please enable JavaScript in your browser settings to run the Commit Archaeology Engine application.</p>
       </div>
     </noscript>
     <script type="module" src="/src/main.tsx"></script>
